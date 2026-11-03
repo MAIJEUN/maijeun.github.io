@@ -1,6 +1,6 @@
 // MIJ Studio — glass block logo
 // 로고 외곽선을 두께가 있는 유리 블럭으로 돌출(extrude)시키고 레이마칭으로 그립니다.
-// 모서리는 45° 면취(chamfer). 빛이 블럭에 들어갈 때·나올 때 굴절(나올 때 색별 분산),
+// 앞뒤 면은 평평하고 모서리는 90°로 각진 블럭. 빛이 블럭에 들어갈 때·나올 때 굴절(나올 때 색별 분산),
 // 표면 반사·프레넬, 커서 하이라이트, 바닥의 그림자·커스틱(빛 맺힘)·점 격자.
 
 struct Params {
@@ -24,7 +24,6 @@ struct Params {
 
 // ── 조절용 값 (로고 단위: viewBox 128 기준) ──
 const DEPTH: f32 = 14.0;        // 블럭 두께의 절반
-const CHAMFER: f32 = 5.0;       // 모서리 45° 면취 크기
 const IOR: f32 = 1.5;           // 굴절률
 const DISPERSION: f32 = 0.03;  // 색 분산 (클수록 무지개 강함)
 const TINT: vec3f = vec3f(0.80, 0.93, 0.95); // 유리 색 (두꺼울수록 진해짐)
@@ -41,19 +40,26 @@ fn sdf2(pl: vec2f) -> f32 {
   return (s - 0.5) * 2.0 * params.range + length(q - inside) * params.box;
 }
 
-// 로컬 좌표의 블럭 SDF: 돌출 + 45° 면취
+// 로컬 좌표의 블럭 SDF: 로고 외곽선을 그대로 돌출 (모서리 90°)
 fn sdf3(q: vec3f) -> f32 {
+  let d2 = sdf2(q.xy);
+  let dz = abs(q.z) - DEPTH * unit();
+  return max(d2, dz);
+}
+
+// 법선: 앞뒤 면은 정확히 평평하게, 옆면은 외곽선 방향으로.
+// 둘 사이 경계는 아주 좁게만 섞어서 모서리가 각지게 보이도록.
+fn normal3(q: vec3f) -> vec3f {
   let s = unit();
   let d2 = sdf2(q.xy);
   let dz = abs(q.z) - DEPTH * s;
-  return max(max(d2, dz), (d2 + dz + CHAMFER * s) * 0.70710678);
-}
-
-fn normal3(q: vec3f) -> vec3f {
-  let e = 0.9 * unit();
-  let k = vec2f(1.0, -1.0);
-  return normalize(k.xyy * sdf3(q + k.xyy * e) + k.yyx * sdf3(q + k.yyx * e) +
-                   k.yxy * sdf3(q + k.yxy * e) + k.xxx * sdf3(q + k.xxx * e));
+  let e = 0.9 * s;
+  let g = vec2f(sdf2(q.xy + vec2f(e, 0.0)) - sdf2(q.xy - vec2f(e, 0.0)),
+                sdf2(q.xy + vec2f(0.0, e)) - sdf2(q.xy - vec2f(0.0, e)));
+  let side = vec3f(g / max(length(g), 1e-5), 0.0);
+  let face = vec3f(0.0, 0.0, select(-1.0, 1.0, q.z > 0.0));
+  let k = smoothstep(-0.3 * s, 0.3 * s, dz - d2);
+  return normalize(mix(side, face, k));
 }
 
 fn toLocal(v: vec3f) -> vec3f { return vec3f(dot(v, params.axisU.xyz), dot(v, params.axisV.xyz), dot(v, params.axisW.xyz)); }
@@ -194,16 +200,17 @@ fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
         trans[k] = sc[k];
       }
     }
-    let absorb = exp(-(t2 / s) * 0.022 * (1.0 - TINT));
+    let absorb = exp(-(t2 / s) * 0.035 * (1.0 - TINT));
     trans *= absorb;
 
     var glass = mix(trans, refl, fres);
 
     // 커서 하이라이트
-    let L = normalize(vec3f(params.light, -params.box * 1.5) - phW);
+    // 평평한 면에서도 작은 점으로 맺히도록 광원을 멀리 두고 날카롭게
+    let L = normalize(vec3f(params.light, -params.box * 5.0) - phW);
     let H = normalize(L - rdW);
     let nh = max(dot(nW, H), 0.0);
-    glass += vec3f(pow(nh, 160.0) * 1.6 + pow(nh, 18.0) * 0.08);
+    glass += vec3f(pow(nh, 900.0) * 1.8 + pow(nh, 120.0) * 0.12);
 
     col = mix(base, clamp(glass, vec3f(0.0), vec3f(1.0)), cover * smoothstep(0.0, 1.0, params.intro));
   }

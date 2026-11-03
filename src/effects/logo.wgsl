@@ -1,7 +1,8 @@
 // MIJ Studio — glass block logo
 // 로고 외곽선을 두께가 있는 유리 블럭으로 돌출(extrude)시키고 레이마칭으로 그립니다.
-// 앞뒤 면은 평평하고 모서리는 90°로 각진 블럭. 빛이 블럭에 들어갈 때·나올 때 굴절(나올 때 색별 분산),
-// 표면 반사·프레넬, 커서 하이라이트, 바닥의 그림자·커스틱(빛 맺힘)·점 격자.
+// 외곽은 90°로 각진 블럭이고, 앞뒤 면은 애플 리퀴드 글래스처럼 가운데는 평평하고 가장자리만 렌즈처럼 휘어
+// 뒤가 크게 굴절돼 보입니다. 빛이 들어갈 때·나올 때 굴절(나올 때 색별 분산), 선명한 스튜디오 반사·프레넬,
+// 커서 쪽 가장자리에 맺히는 가는 빛선(림 라이트), 바닥의 그림자·커스틱(빛 맺힘)·점 격자.
 
 struct Params {
   res: vec2f,      // 화면 크기 (CSS px)
@@ -26,10 +27,15 @@ struct Params {
 const DEPTH: f32 = 14.0;        // 블럭 두께의 절반
 const IOR: f32 = 1.5;           // 굴절률
 const DISPERSION: f32 = 0.03;  // 색 분산 (클수록 무지개 강함)
-const TINT: vec3f = vec3f(0.80, 0.93, 0.95); // 유리 색 (두꺼울수록 진해짐)
+const TINT: vec3f = vec3f(0.90, 0.96, 0.97); // 유리 색 (두꺼울수록 진해짐)
 const PERSPECTIVE: f32 = 4.0;   // 시점 거리 = box × 이 값
 const FLOAT: f32 = 0.05;        // 바닥에서 떠 있는 높이 (box 비율)
 const AA_SAMPLES: i32 = 4;      // 모서리 안티앨리어싱 (0 = 끔, 가벼워짐)
+const LENS_WIDTH: f32 = 7.0;    // 리퀴드 글래스: 면 가장자리에서 렌즈처럼 휘는 폭
+const LENS: f32 = 1.1;          // 리퀴드 글래스: 가장자리 휨 세기 (클수록 굴절 강함)
+const RIM_WIDTH: f32 = 1.3;     // 가장자리 빛선 두께
+const RIM_STRENGTH: f32 = 0.9;  // 가장자리 빛선 밝기
+const GLASS_LIFT: f32 = 0.06;   // 유리 몸통을 살짝 밝게 띄움 (리퀴드 글래스의 뿌연 빛)
 
 fn unit() -> f32 { return params.box / 128.0; }
 
@@ -48,19 +54,30 @@ fn sdf3(q: vec3f) -> f32 {
   return max(d2, dz);
 }
 
-// 법선: 앞뒤 면은 정확히 평평하게, 옆면은 외곽선 방향으로.
-// 둘 사이 경계는 아주 좁게만 섞어서 모서리가 각지게 보이도록.
+// 외곽선의 바깥 방향 (2D)
+fn grad2(pl: vec2f) -> vec2f {
+  let e = 0.9 * unit();
+  let g = vec2f(sdf2(pl + vec2f(e, 0.0)) - sdf2(pl - vec2f(e, 0.0)),
+                sdf2(pl + vec2f(0.0, e)) - sdf2(pl - vec2f(0.0, e)));
+  return g / max(length(g), 1e-5);
+}
+
+// 앞뒤 면 쪽인지(1) 옆면 쪽인지(0). 경계는 아주 좁게만 섞어서 모서리가 각지게 보이도록.
+fn faceAmount(q: vec3f) -> f32 {
+  let s = unit();
+  return smoothstep(-0.3 * s, 0.3 * s, (abs(q.z) - DEPTH * s) - sdf2(q.xy));
+}
+
+// 법선: 옆면은 외곽선 방향. 앞뒤 면은 가운데는 평평하고 가장자리 LENS_WIDTH 안쪽만 바깥으로 휘어짐 (리퀴드 글래스)
 fn normal3(q: vec3f) -> vec3f {
   let s = unit();
   let d2 = sdf2(q.xy);
-  let dz = abs(q.z) - DEPTH * s;
-  let e = 0.9 * s;
-  let g = vec2f(sdf2(q.xy + vec2f(e, 0.0)) - sdf2(q.xy - vec2f(e, 0.0)),
-                sdf2(q.xy + vec2f(0.0, e)) - sdf2(q.xy - vec2f(0.0, e)));
-  let side = vec3f(g / max(length(g), 1e-5), 0.0);
+  let g = grad2(q.xy);
+  let side = vec3f(g, 0.0);
   let face = vec3f(0.0, 0.0, select(-1.0, 1.0, q.z > 0.0));
-  let k = smoothstep(-0.3 * s, 0.3 * s, dz - d2);
-  return normalize(mix(side, face, k));
+  let rimT = clamp(1.0 + d2 / (LENS_WIDTH * s), 0.0, 1.0);
+  let lensFace = normalize(face + vec3f(g * LENS * rimT * rimT, 0.0));
+  return normalize(mix(side, lensFace, faceAmount(q)));
 }
 
 fn toLocal(v: vec3f) -> vec3f { return vec3f(dot(v, params.axisU.xyz), dot(v, params.axisV.xyz), dot(v, params.axisW.xyz)); }
@@ -103,14 +120,22 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
   return col;
 }
 
-// 반사되는 스튜디오 환경: 위는 밝고 아래는 어두움 + 소프트박스 + 천천히 지나가는 빛줄기
+fn rect(az: f32, el: f32, c: vec2f, h: vec2f, soft: f32) -> f32 {
+  return (1.0 - smoothstep(h.x - soft, h.x + soft, abs(az - c.x))) *
+         (1.0 - smoothstep(h.y - soft, h.y + soft, abs(el - c.y)));
+}
+
+// 반사되는 스튜디오 환경. 유리답게 경계가 또렷한 조명(소프트박스·세로 띠)과 어두운 바닥/밝은 위쪽.
+// 커서를 움직이면 조명 방향도 살짝 따라 돌아서 반사가 미끄러짐.
 fn env(r: vec3f) -> vec3f {
-  var c = mix(vec3f(0.22), vec3f(0.95), smoothstep(-0.6, 0.7, -r.y));
-  let box1 = smoothstep(0.90, 0.99, dot(r, normalize(vec3f(-0.6, -0.55, -0.6))));
-  let box2 = smoothstep(0.95, 0.995, dot(r, normalize(vec3f(0.8, -0.1, -0.6))));
-  let a = params.time * 0.35;
-  let sweep = smoothstep(0.975, 0.998, dot(r, normalize(vec3f(sin(a) * 0.9, -0.25, -0.55))));
-  c += vec3f(1.0) * (box1 * 1.1 + box2 * 0.7 + sweep * 1.4);
+  let az = atan2(r.x, -r.z) + (params.light.x - params.center.x) / params.res.x * 0.9;
+  let el = asin(clamp(-r.y, -1.0, 1.0)) - (params.light.y - params.center.y) / params.res.y * 0.6;
+  var c = mix(vec3f(0.03), vec3f(0.16), smoothstep(-0.04, 0.04, el)); // 지평선
+  c += vec3f(0.22) * smoothstep(0.1, 1.3, el);
+  c += vec3f(1.7) * rect(az, el, vec2f(-0.55, 0.55), vec2f(0.40, 0.16), 0.02); // 왼쪽 위 큰 조명
+  c += vec3f(1.3) * rect(az, el, vec2f(0.95, 0.20), vec2f(0.06, 0.45), 0.015); // 오른쪽 세로 띠
+  let sweepX = sin(params.time * 0.3) * 1.4;
+  c += vec3f(1.1) * rect(az, el, vec2f(sweepX, 0.3), vec2f(0.025, 0.7), 0.01); // 천천히 지나가는 빛줄기
   return c;
 }
 
@@ -199,7 +224,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     if (!exited || dot(oMid, oMid) < 1e-4) {
       // 전반사(빛이 안에서 튕김) — 잡음 대신 부드러운 빛으로
       let r = toWorld(reflect(rIn, -ne));
-      trans = mix(params.bg.rgb * 0.7 + 0.15, vec3f(0.92), smoothstep(-0.6, 0.7, -r.y));
+      trans = mix(params.bg.rgb * 0.6 + 0.08, vec3f(0.9), smoothstep(-0.3, 0.6, -r.y));
     } else {
       for (var k = 0; k < 3; k++) {
         let eta = IOR + (f32(k) - 1.0) * DISPERSION;
@@ -209,17 +234,26 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
         trans[k] = sc[k];
       }
     }
-    let absorb = exp(-(t2 / s) * 0.035 * (1.0 - TINT));
+    let absorb = exp(-(t2 / s) * 0.02 * (1.0 - TINT));
     trans *= absorb;
 
     var glass = mix(trans, refl, fres);
 
-    // 커서 하이라이트
-    // 평평한 면에서도 작은 점으로 맺히도록 광원을 멀리 두고 날카롭게
-    let L = normalize(vec3f(params.light, -params.box * 5.0) - phW);
-    let H = normalize(L - rdW);
-    let nh = max(dot(nW, H), 0.0);
-    glass += vec3f(pow(nh, 900.0) * 1.8 + pow(nh, 120.0) * 0.12);
+    // 가장자리 빛선 (리퀴드 글래스): 커서 쪽을 향한 가장자리가 가장 밝고, 반대쪽도 은은하게
+    let d2h = sdf2(ph.xy);
+    let g2 = grad2(ph.xy);
+    let Ld = toLocal(vec3f(params.light - params.center, 0.0)).xy;
+    let L2 = Ld / max(length(Ld), 1e-3);
+    let a = dot(g2, L2);
+    let rimLine = (1.0 - smoothstep(0.0, RIM_WIDTH * s, -d2h)) * faceAmount(ph);
+    let rimI = rimLine * (0.18 + pow(max(a, 0.0), 1.5) + 0.45 * pow(max(-a, 0.0), 1.5));
+    glass += vec3f(rimI * RIM_STRENGTH);
+    // 가장자리 렌즈 부분의 은은한 안쪽 빛 + 몸통을 살짝 밝게
+    let lensT = clamp(1.0 + d2h / (LENS_WIDTH * s), 0.0, 1.0) * faceAmount(ph);
+    let lum = dot(params.bg.rgb, vec3f(0.3333));
+    glass += vec3f(lensT * lensT * 0.10 + GLASS_LIFT) * (1.0 - lum);
+    // 라이트 모드: 가장자리 안쪽에 옅은 그림자를 넣어 흰 배경에서도 형태가 보이게
+    glass *= 1.0 - lensT * lensT * 0.16 * lum;
 
     col = mix(base, clamp(glass, vec3f(0.0), vec3f(1.0)), cover * smoothstep(0.0, 1.0, params.intro));
   }

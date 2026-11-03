@@ -1,0 +1,11 @@
+---
+import Base from '../layouts/Base.astro';
+import ProjectList from '../components/ProjectList.astro';
+import { PROJECTS } from '../data/site';
+---
+<Base title="프로젝트" description="지금까지 만든 것들">
+  <h1>프로젝트</h1>
+  <p class="muted intro">지금까지 만든 것들.</p>
+  <ProjectList projects={PROJECTS} />
+</Base>
+<style>.intro { margin: 0 0 32px; }</style>

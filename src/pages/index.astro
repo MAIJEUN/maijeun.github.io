@@ -1,0 +1,54 @@
+---
+import Base from '../layouts/Base.astro';
+import Logo from '../components/Logo.astro';
+---
+<Base bare>
+  <main class="home">
+    <h1 class="sr-only">MIJ Studio</h1>
+    <Logo class="logo" size="100%" />
+  </main>
+  <canvas class="liquid" aria-hidden="true"></canvas>
+</Base>
+
+<script>
+  import { mountLiquidLogo } from '../effects/liquid-logo';
+
+  const canvas = document.querySelector<HTMLCanvasElement>('canvas.liquid')!;
+  const logo = document.querySelector('.home .logo')!;
+  mountLiquidLogo(canvas, logo).catch((err) => {
+    // WebGPU를 못 쓰는 환경이면 그냥 SVG 로고가 보입니다.
+    console.warn('[liquid-logo]', err);
+    document.documentElement.classList.remove('liquid-on');
+  });
+</script>
+
+<style>
+  .home {
+    min-height: 100vh;
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .home :global(.logo) {
+    width: clamp(64px, 12vw, 112px);
+    height: auto;
+    color: var(--fg);
+    transition: opacity 0.2s;
+  }
+  .liquid {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  :global(html.liquid-on) .liquid { opacity: 1; }
+  :global(html.liquid-on) .home :global(.logo) { opacity: 0; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+</style>

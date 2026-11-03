@@ -1,0 +1,71 @@
+---
+import '../styles/global.css';
+import { SITE, NAV, LINKS } from '../data/site';
+
+interface Props { title?: string; description?: string; bare?: boolean; }
+const { title, description = SITE.description, bare = false } = Astro.props;
+const pageTitle = title ? `${title} — ${SITE.name}` : SITE.title;
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <link rel="alternate" type="application/rss+xml" title={SITE.name} href="/rss.xml" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  </head>
+  <body>
+    {!bare && (
+    <header class="wrap site-header">
+      <a href="/" class="brand">{SITE.name}</a>
+      <nav>
+        {NAV.map((n) => (
+          <a href={n.href} class:list={[{ active: path.startsWith(n.href) }]}>{n.label}</a>
+        ))}
+      </nav>
+    </header>
+    )}
+    {bare ? <slot /> : (
+    <main class="wrap">
+      <slot />
+    </main>
+    )}
+    {!bare && (
+    <footer class="wrap site-footer">
+      <span>© {new Date().getFullYear()} {SITE.name}</span>
+      <span class="foot-links">
+        {LINKS.slice(0, 3).map((l) => <a href={l.href} target="_blank" rel="noopener">{l.label}</a>)}
+        <a href="/rss.xml">RSS</a>
+      </span>
+    </footer>
+    )}
+  </body>
+</html>
+
+<style>
+  .site-header {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding-top: 28px; padding-bottom: 0; flex-wrap: wrap;
+  }
+  .brand { font-weight: 650; letter-spacing: -0.02em; }
+  nav { display: flex; gap: 20px; font-size: 0.925rem; }
+  nav a { color: var(--muted); transition: color .15s; }
+  nav a:hover, nav a.active { color: var(--fg); }
+  .site-footer {
+    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 40px; font-size: 0.85rem; color: var(--faint);
+  }
+  .foot-links { display: flex; gap: 16px; }
+  .foot-links a:hover { color: var(--fg); }
+  @media (max-width: 480px) { nav { gap: 14px; } }
+</style>

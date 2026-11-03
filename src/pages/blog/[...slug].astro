@@ -1,0 +1,40 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { getPosts } from '../../lib';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, newer: posts[i - 1], older: posts[i + 1] },
+  }));
+}
+
+const { post, newer, older } = Astro.props;
+const { Content } = await render(post);
+const date = post.data.date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+---
+<Base title={post.data.title} description={post.data.description}>
+  <article>
+    <header class="post-head">
+      <a href="/blog" class="faint back">← 블로그</a>
+      <h1>{post.data.title}</h1>
+      <time class="faint" datetime={post.data.date.toISOString()}>{date}</time>
+    </header>
+    <div class="prose"><Content /></div>
+  </article>
+  <nav class="pager">
+    {older ? <a href={`/blog/${older.id}`}><span class="faint">이전 글</span><br />{older.data.title}</a> : <span />}
+    {newer && <a href={`/blog/${newer.id}`} class="right"><span class="faint">다음 글</span><br />{newer.data.title}</a>}
+  </nav>
+</Base>
+<style>
+  .post-head { margin-bottom: 40px; }
+  .back { font-size: 0.875rem; display: inline-block; margin-bottom: 24px; }
+  .back:hover { color: var(--fg); }
+  .post-head time { font-size: 0.9rem; }
+  .pager { display: flex; justify-content: space-between; gap: 24px; margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.925rem; }
+  .pager a:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .right { text-align: right; }
+</style>

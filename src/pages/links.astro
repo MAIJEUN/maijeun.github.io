@@ -1,0 +1,39 @@
+---
+import Base from '../layouts/Base.astro';
+import { SITE, LINKS } from '../data/site';
+---
+<Base title="링크" description={`${SITE.name}의 링크 모음`}>
+  <div class="links-page">
+    <div class="avatar" aria-hidden="true">{SITE.name.slice(0, 1)}</div>
+    <h1>{SITE.name}</h1>
+    <p class="muted">{SITE.description}</p>
+    <ul class="link-list">
+      {LINKS.map((l) => (
+        <li>
+          <a href={l.href} target={l.href.startsWith('mailto') ? undefined : '_blank'} rel="noopener">
+            <span class="name">{l.label}</span>
+            <span class="handle">{l.handle}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</Base>
+<style>
+  .links-page { max-width: 420px; margin: 0 auto; text-align: center; }
+  .avatar {
+    width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 16px;
+    display: grid; place-items: center; font-size: 1.6rem; font-weight: 650;
+    background: var(--fg); color: var(--bg);
+  }
+  h1 { margin-bottom: 4px; }
+  .link-list { list-style: none; padding: 0; margin: 32px 0 0; display: grid; gap: 10px; }
+  .link-list a {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px;
+    transition: background .15s, border-color .15s;
+  }
+  .link-list a:hover { background: var(--hover); border-color: var(--faint); }
+  .name { font-weight: 550; }
+  .handle { color: var(--faint); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

@@ -1,0 +1,40 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getPosts } from '../../lib';
+
+const posts = await getPosts();
+const byYear = Object.entries(
+  posts.reduce<Record<string, typeof posts>>((acc, p) => {
+    const y = String(p.data.date.getFullYear());
+    (acc[y] ??= []).push(p);
+    return acc;
+  }, {})
+).sort(([a], [b]) => Number(b) - Number(a));
+const fmt = (d: Date) => d.toISOString().slice(5, 10).replace('-', '.');
+---
+<Base title="블로그" description="생각과 기록">
+  <h1>블로그</h1>
+  <p class="muted intro">생각과 기록. <a class="link-u" href="/rss.xml">RSS</a></p>
+  {byYear.map(([year, list]) => (
+    <section class="year">
+      <p class="label">{year}</p>
+      <ul class="rows">
+        {list.map((p) => (
+          <li>
+            <a class="row" href={`/blog/${p.id}`}>
+              <div>
+                <span class="row-title">{p.data.title}</span>
+                {p.data.description && <p class="row-desc">{p.data.description}</p>}
+              </div>
+              <time class="row-meta" datetime={p.data.date.toISOString()}>{fmt(p.data.date)}</time>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</Base>
+<style>
+  .intro { margin: 0 0 40px; }
+  .year + .year { margin-top: 40px; }
+</style>

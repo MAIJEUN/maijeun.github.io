@@ -1,0 +1,48 @@
+---
+import Base from '../layouts/Base.astro';
+import { SITE, EXPERIENCE, SKILLS, LINKS } from '../data/site';
+---
+<Base title="소개">
+  <h1>소개</h1>
+  <section class="bio">
+    {SITE.intro.map((line) => <p>{line}</p>)}
+  </section>
+
+  <section>
+    <p class="label">Experience</p>
+    <ul class="rows">
+      {EXPERIENCE.map((e) => (
+        <li class="row">
+          <div>
+            <span class="row-title">{e.title}</span> <span class="muted">· {e.org}</span>
+            {e.note && <p class="row-desc">{e.note}</p>}
+          </div>
+          <span class="row-meta">{e.period}</span>
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <section>
+    <p class="label">Skills</p>
+    <div class="tags">{SKILLS.map((s) => <span class="tag">{s}</span>)}</div>
+  </section>
+
+  <section>
+    <p class="label">Contact</p>
+    <p>
+      <a class="link-u" href={`mailto:${SITE.email}`}>{SITE.email}</a>
+    </p>
+    <p class="muted">
+      {LINKS.filter((l) => !l.href.startsWith('mailto')).map((l, i) => (
+        <>{i > 0 && ' · '}<a class="link-u" href={l.href} target="_blank" rel="noopener">{l.label}</a></>
+      ))}
+    </p>
+  </section>
+</Base>
+
+<style>
+  .bio { margin-top: 24px; }
+  .bio p { margin: 0 0 12px; }
+  .tags .tag { font-size: 0.85rem; padding: 3px 12px; }
+</style>

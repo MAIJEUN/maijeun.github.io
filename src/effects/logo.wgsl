@@ -29,6 +29,7 @@ const DISPERSION: f32 = 0.03;  // 색 분산 (클수록 무지개 강함)
 const TINT: vec3f = vec3f(0.80, 0.93, 0.95); // 유리 색 (두꺼울수록 진해짐)
 const PERSPECTIVE: f32 = 4.0;   // 시점 거리 = box × 이 값
 const FLOAT: f32 = 0.05;        // 바닥에서 떠 있는 높이 (box 비율)
+const AA_SAMPLES: i32 = 4;      // 모서리 안티앨리어싱 (0 = 끔, 가벼워짐)
 
 fn unit() -> f32 { return params.box / 128.0; }
 
@@ -122,9 +123,10 @@ fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
   return env(d);
 }
 
-@fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
-  let p = uv * params.res;
-  let px = max(fwidth(p.x), 1e-3); // 화면 픽셀 1개 = CSS px
+struct Sample { col: vec3f, edge: bool }
+
+// 화면 한 점(p, CSS px)의 색. edge = 모서리 근처라서 더 촘촘히 샘플링할 필요가 있음
+fn shadeAt(p: vec2f, px: f32) -> Sample {
   let s = unit();
   let E = eyePos();
   let rdW = normalize(vec3f(p, 0.0) - E);
@@ -161,10 +163,15 @@ fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
   }
 
   var col = base;
+  // 바깥 윤곽선 근처 (스치듯 지나간 광선)
+  var edge = tn < tf && !hit && minD < 2.5 * px;
   let cover = select(1.0 - smoothstep(0.0, px, minD), 1.0, hit);
   if (cover > 0.0) {
     let ph = ro + rd * select(tMin, t, hit);
     let n = normal3(ph);
+    // 앞면과 옆면이 만나는 각진 모서리, 또는 옆면을 비스듬히 스치는 곳 (윤곽선)
+    let fe = abs((abs(ph.z) - DEPTH * s) - sdf2(ph.xy));
+    edge = edge || fe < 2.0 * px || abs(dot(rd, n)) < 0.3;
     let nW = toWorld(n);
     let phW = toWorld(ph) + C;
 
@@ -184,6 +191,8 @@ fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
     }
     let pe = ph + rIn * t2;
     let ne = normal3(pe);
+    // 유리 너머로 보이는 모서리
+    edge = edge || abs((abs(pe.z) - DEPTH * s) - sdf2(pe.xy)) < 2.0 * px;
     let peW = toWorld(pe) + C;
     var trans = vec3f(0.0);
     let oMid = refract(rIn, -ne, IOR);
@@ -213,6 +222,23 @@ fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
     glass += vec3f(pow(nh, 900.0) * 1.8 + pow(nh, 120.0) * 0.12);
 
     col = mix(base, clamp(glass, vec3f(0.0), vec3f(1.0)), cover * smoothstep(0.0, 1.0, params.intro));
+  }
+  return Sample(col, edge);
+}
+
+// 안티앨리어싱: 모서리 근처 픽셀만 한 픽셀 안을 4점 더 (회전 격자) 샘플링해 평균
+@fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
+  let p = uv * params.res;
+  let px = max(fwidth(p.x), 1e-3); // 화면 픽셀 1개 = CSS px
+  let first = shadeAt(p, px);
+  var col = first.col;
+  if (first.edge && AA_SAMPLES > 0) {
+    var offs = array<vec2f, 4>(vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
+    var acc = vec3f(0.0);
+    for (var i = 0; i < 4; i++) {
+      acc += shadeAt(p + offs[i] * px, px).col;
+    }
+    col = (acc + first.col) / 5.0;
   }
   return vec4f(col, 1.0);
 }

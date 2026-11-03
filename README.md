@@ -41,6 +41,7 @@ MIJ Studio 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pa
 | `TINT` | 유리 색. 두꺼울수록 진해집니다. |
 | `PERSPECTIVE` | 원근감. 작을수록 원근이 강해집니다. |
 | `FLOAT` | 바닥에서 떠 있는 높이 |
+| `AA_SAMPLES` | 모서리 안티앨리어싱. 0이면 꺼지고 조금 가벼워집니다. |
 
 `src/effects/glass-logo.ts`에서 바꿀 수 있는 값:
 

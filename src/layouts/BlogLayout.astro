@@ -1,95 +1,54 @@
 ---
-import '../styles/glass.css';
 import Base from './Base.astro';
 import Logo from '../components/Logo.astro';
 import { SITE } from '../data/site';
 
-interface Props { title?: string; description?: string; wide?: boolean; }
-const { title, description, wide = false } = Astro.props;
+interface Props { title?: string; description?: string; }
+const { title, description } = Astro.props;
 ---
-<Base title={title} description={description} bare bodyClass="glass-page">
-  <div class="watermark" aria-hidden="true"><Logo size="100%" /></div>
-
-  <header class="top">
-    <nav class="glass bar" aria-label="사이트">
-      <a href="/" class="home" aria-label={`${SITE.name} 홈`}>
-        <Logo size={20} />
-        <span>{SITE.name}</span>
-      </a>
-      <span class="sep" aria-hidden="true">/</span>
-      <a href="/blog" class="crumb">Blog</a>
-      <a href="/rss.xml" class="rss" aria-label="RSS 피드">RSS</a>
+<Base title={title} description={description} bare>
+  <header class="page top">
+    <a href="/" class="home" aria-label={`${SITE.name} 홈`}>
+      <Logo size={20} />
+      <span>{SITE.name}</span>
+    </a>
+    <nav>
+      <a href="/blog">Blog</a>
+      <a href="/rss.xml">RSS</a>
     </nav>
   </header>
 
-  <main class:list={['page', { wide }]}>
+  <main class="page">
     <slot />
   </main>
 
   <footer class="page foot">
     <span>© {new Date().getFullYear()} {SITE.name}</span>
-    <a href="/">← 처음으로</a>
+    <a href="/">처음으로</a>
   </footer>
 </Base>
 
-<script>
-  // 커서 위치를 유리 카드에 전달 → 테두리와 안쪽이 커서 쪽으로 빛남
-  addEventListener(
-    'pointermove',
-    (e) => {
-      const el = (e.target as Element | null)?.closest?.('.glass') as HTMLElement | null;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      el.style.setProperty('--mx', `${e.clientX - r.left}px`);
-      el.style.setProperty('--my', `${e.clientY - r.top}px`);
-    },
-    { passive: true },
-  );
-</script>
-
 <style>
-  .watermark {
-    position: fixed;
-    right: -6vmin;
-    bottom: -10vmin;
-    width: min(70vmin, 620px);
-    color: var(--watermark);
-    z-index: -1;
-    pointer-events: none;
-  }
-  .watermark :global(svg) { width: 100%; height: auto; display: block; }
-
-  .top {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    padding: 16px 16px 0;
-  }
-  .bar {
-    --radius: 16px;
-    max-width: 760px;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 16px;
-    font-size: 0.925rem;
-  }
-  .home { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
-  .home :global(svg) { flex: none; }
-  .sep { color: var(--faint); }
-  .crumb { color: var(--muted); }
-  .crumb:hover, .rss:hover { color: var(--fg); }
-  .rss { margin-left: auto; font-size: 0.8rem; color: var(--faint); letter-spacing: 0.04em; }
-
   .page {
-    max-width: 720px;
+    max-width: 680px;
     margin: 0 auto;
     padding-left: 20px;
     padding-right: 20px;
   }
-  .page.wide { max-width: 760px; }
-  main.page { padding-top: 56px; padding-bottom: 80px; }
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding-top: 28px;
+  }
+  .home { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
+  .home :global(svg) { flex: none; }
+  nav { display: flex; gap: 20px; font-size: 0.925rem; }
+  nav a { color: var(--muted); transition: color 0.15s; }
+  nav a:hover { color: var(--fg); }
+
+  main.page { padding-top: 64px; padding-bottom: 96px; }
 
   .foot {
     display: flex;
@@ -101,9 +60,7 @@ const { title, description, wide = false } = Astro.props;
   }
   .foot a:hover { color: var(--fg); }
 
-  @media (max-width: 520px) {
-    .top { padding: 10px 10px 0; }
-    .home span { display: none; }
-    main.page { padding-top: 36px; }
+  @media (max-width: 480px) {
+    main.page { padding-top: 44px; }
   }
 </style>

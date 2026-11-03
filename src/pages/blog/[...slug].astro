@@ -17,34 +17,30 @@ const { Content } = await render(post);
 <BlogLayout title={post.data.title} description={post.data.description}>
   <article>
     <header class="post-head">
-      <a href="/blog" class="glass pill back">← 블로그</a>
+      <a href="/blog" class="back">← 블로그</a>
       <h1>{post.data.title}</h1>
       {post.data.description && <p class="desc">{post.data.description}</p>}
-      <div class="meta">
+      <p class="meta">
         <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
-        <span>·</span>
-        <span>{readingMinutes(post.body)}분 읽기</span>
-        {post.data.tags.map((t) => <span class="chip">{t}</span>)}
-      </div>
+        <span> · {readingMinutes(post.body)}분 읽기</span>
+        {post.data.tags.length > 0 && <span> · {post.data.tags.map((t) => `#${t}`).join(' ')}</span>}
+      </p>
     </header>
-
-    <div class="glass body">
-      <div class="prose"><Content /></div>
-    </div>
+    <div class="prose"><Content /></div>
   </article>
 
   {(older || newer) && (
     <nav class="pager" aria-label="다른 글">
       {older ? (
-        <a class="glass card" href={`/blog/${older.id}`}>
-          <span class="eyebrow">← 이전 글</span>
-          <span class="card-title">{older.data.title}</span>
+        <a href={`/blog/${older.id}`}>
+          <span class="faint">이전 글</span>
+          <span>{older.data.title}</span>
         </a>
       ) : <span />}
       {newer ? (
-        <a class="glass card next" href={`/blog/${newer.id}`}>
-          <span class="eyebrow">다음 글 →</span>
-          <span class="card-title">{newer.data.title}</span>
+        <a href={`/blog/${newer.id}`} class="next">
+          <span class="faint">다음 글</span>
+          <span>{newer.data.title}</span>
         </a>
       ) : <span />}
     </nav>
@@ -52,42 +48,27 @@ const { Content } = await render(post);
 </BlogLayout>
 
 <style>
-  .post-head { margin-bottom: 28px; }
-  .back { margin-bottom: 28px; }
-  .post-head h1 {
-    font-size: clamp(1.9rem, 5.2vw, 2.6rem);
-    letter-spacing: -0.035em;
-    line-height: 1.25;
-    margin: 0 0 12px;
-  }
-  .desc { margin: 0 0 16px; color: var(--muted); font-size: 1.1rem; }
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.875rem;
-    color: var(--faint);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .body { --radius: 22px; padding: 40px 44px 24px; }
-  .body .prose > :global(:first-child) { margin-top: 0; }
-  .body .prose :global(pre) { border-radius: 12px; border-color: var(--line); }
+  .post-head { margin-bottom: 40px; }
+  .back { display: inline-block; margin-bottom: 28px; font-size: 0.875rem; color: var(--faint); }
+  .back:hover { color: var(--fg); }
+  .post-head h1 { font-size: clamp(1.75rem, 5vw, 2.2rem); letter-spacing: -0.03em; line-height: 1.3; margin: 0 0 10px; }
+  .desc { margin: 0 0 12px; color: var(--muted); font-size: 1.05rem; }
+  .meta { margin: 0; font-size: 0.875rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 
   .pager {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-top: 28px;
+    gap: 24px;
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 0.925rem;
   }
-  .card { display: flex; flex-direction: column; gap: 2px; padding: 18px 20px; }
-  .card .eyebrow { margin: 0; }
-  .card-title { font-weight: 560; }
+  .pager a { display: flex; flex-direction: column; gap: 2px; }
+  .pager a:hover span:last-child { text-decoration: underline; text-underline-offset: 4px; }
   .next { text-align: right; }
 
-  @media (max-width: 600px) {
-    .body { --radius: 18px; padding: 26px 20px 12px; }
+  @media (max-width: 480px) {
     .pager { grid-template-columns: 1fr; }
     .pager > span { display: none; }
     .next { text-align: left; }

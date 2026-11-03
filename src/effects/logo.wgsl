@@ -29,6 +29,9 @@ const DISPERSION: f32 = 0.03;  // 색 분산 (클수록 무지개 강함)
 const TINT: vec3f = vec3f(0.80, 0.93, 0.95); // 유리 색 (두꺼울수록 진해짐)
 const PERSPECTIVE: f32 = 4.0;   // 시점 거리 = box × 이 값
 const FLOAT: f32 = 0.05;        // 바닥에서 떠 있는 높이 (box 비율)
+const LIGHT_HEIGHT: f32 = 2.2;  // 커서 조명의 높이 (box 비율, 낮을수록 그림자·빛 무늬가 길게 늘어짐)
+const CAUSTIC_STRENGTH: f32 = 1.0; // 빛 맺힘 세기
+const CAUSTIC_SPREAD: f32 = 0.12;  // 빛 맺힘 무지개 퍼짐
 
 fn unit() -> f32 { return params.box / 128.0; }
 
@@ -81,24 +84,53 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
   let dots = (1.0 - smoothstep(0.55 * s - soft, 0.95 * s + soft, dd)) * 0.16 * fade * (0.95 * s) / (0.95 * s + soft);
   var col = mix(params.bg.rgb, params.fg.rgb, dots);
 
-  // 키 라이트(왼쪽 위 앞) 방향으로 블럭 가운데 면을 찾아 그림자
-  let toLight = normalize(vec3f(-0.22, -0.38, -1.0));
-  let o = toLocal(vec3f(q, pageZ()) - vec3f(params.center, 0.0));
-  let dl = toLocal(toLight);
-  let tt = -o.z / dl.z;
-  let d = sdf2(o.xy + dl.xy * tt);
-  let blur = s * 7.0 + soft;
-  let shadow = (1.0 - smoothstep(-blur, blur, d)) * (0.07 + 0.08 * smoothstep(-s * 14.0, 0.0, d));
-  col *= 1.0 - shadow * params.intro;
+  // 커서 = 바닥을 비추는 조명 (화면 앞쪽 높이에 있는 점광원)
+  let lum = dot(params.bg.rgb, vec3f(0.3333));
+  let Lp = vec3f(params.light, -params.box * LIGHT_HEIGHT);
+  let P = vec3f(q, pageZ());
+  let toL = normalize(Lp - P);
+  let lq = q - params.light;
+  let spot = exp(-dot(lq, lq) / (params.box * params.box * 1.4));
+  col += vec3f(0.10) * (1.0 - lum) * spot; // 다크 모드: 조명이 닿는 바닥이 은은하게 밝아짐
 
-  // 커스틱: 유리를 통과한 빛이 그림자 안쪽 가장자리에 색깔 띠로 맺힘
-  let k = vec3f(
-    exp(-pow((d + s * 3.0) / (s * 1.6), 2.0)),
-    exp(-pow((d + s * 3.8) / (s * 1.6), 2.0)),
-    exp(-pow((d + s * 4.6) / (s * 1.6), 2.0)),
-  );
-  let shimmer = 0.75 + 0.25 * sin(params.time * 1.3 + (o.x + o.y) / (s * 9.0));
-  col += k * 0.12 * shimmer * params.intro;
+  // 바닥 점에서 조명 쪽으로 거슬러 올라가 블럭(로컬 가운데 면)을 지나는 위치
+  let o = toLocal(P - vec3f(params.center, 0.0));
+  let dl = toLocal(toL);
+  let valid = select(0.0, 1.0, abs(dl.z) > 0.05); // 블럭이 옆으로 누우면 생략
+  let tt = -o.z / select(1.0, dl.z, abs(dl.z) > 0.05);
+  let p0 = o.xy + dl.xy * tt;
+
+  // 두께 있는 유리판을 비스듬히 통과한 빛은 옆으로 밀림 — 색마다 다르게 (무지개)
+  let sinT = length(dl.xy);
+  let cosT = max(abs(dl.z), 0.05);
+  let dirT = dl.xy / max(sinT, 1e-4);
+  let tanT = sinT / cosT;
+  let h = DEPTH * s;
+
+  var shade = vec3f(0.0);
+  var glow = vec3f(0.0);
+  for (var k = 0; k < 3; k++) {
+    let kf = f32(k);
+    let eta = IOR + (kf - 1.0) * CAUSTIC_SPREAD;
+    let sr = sinT / eta;
+    let tanR = sr / sqrt(max(1.0 - sr * sr, 1e-4));
+    let pk = p0 - dirT * h * (tanT - tanR);
+    let d = sdf2(pk);
+
+    let blur = s * 2.5 + soft;
+    let occ = 1.0 - smoothstep(-blur, blur, d);                         // 블럭 아래
+    let rim = exp(-pow((d + s * 1.0) / (s * 1.6 + soft), 2.0));         // 옆벽: 빛이 꺾여 나가 어두운 띠
+    let wave = sin(params.time * 1.2 + (pk.x - pk.y * 0.6) / (s * 6.0));
+    let focusAt = s * (3.4 + kf * 1.0 + 0.6 * wave);
+    let focus = exp(-pow((d + focusAt) / (s * 1.2 + soft), 2.0));      // 안쪽: 빛이 모인 밝은 선
+    let core = exp(-pow((d + s * 10.0) / (s * 4.0 + soft), 2.0)) * 0.35; // 더 안쪽 은은한 빛
+    let halo = exp(-pow((d - s * (2.2 + kf * 0.9)) / (s * 1.8 + soft), 2.0)) * 0.4; // 바깥으로 새는 빛
+
+    shade[k] = occ * 0.24 + rim * 0.34;
+    glow[k] = (focus + core) * occ + halo;
+  }
+  let amt = params.intro * valid * (0.35 + 0.65 * spot) * CAUSTIC_STRENGTH;
+  col = col * (1.0 - shade * amt) + glow * amt * mix(0.46, 0.34, lum);
   return col;
 }
 

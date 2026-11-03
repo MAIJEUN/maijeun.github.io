@@ -1,6 +1,6 @@
 # maijeun.github.io
 
-MIJ Studio 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages로 배포합니다.
+MAIJEUN 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages로 배포합니다.
 
 메인 페이지에는 로고 하나만 있습니다. 로고는 [vgpu](https://vgpu.sh)(WebGPU) 셰이더로 레이마칭해서 그린 **유리 블럭**입니다.
 

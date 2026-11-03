@@ -1,10 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
 import Logo from '../components/Logo.astro';
+import { SITE } from '../data/site';
 ---
 <Base bare>
   <main class="home">
-    <h1 class="sr-only">MIJ Studio</h1>
+    <h1 class="sr-only">{SITE.name}</h1>
     <Logo class="logo" size="100%" />
   </main>
   <canvas class="glass" aria-hidden="true"></canvas>

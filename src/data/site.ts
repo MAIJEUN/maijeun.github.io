@@ -1,14 +1,14 @@
 // ✏️ 사이트 정보는 대부분 이 파일 하나만 고치면 됩니다.
 
 export const SITE = {
-  name: 'MIJ Studio',
-  title: 'MIJ Studio',
+  name: 'MAIJEUN',
+  title: 'MAIJEUN',
   description: '만들고, 기록하고, 공유합니다.',
   role: '개발자 · 메이커',
   location: 'Seoul, KR',
   email: 'hello@example.com',
   intro: [
-    '안녕하세요. 웹을 만들고 그 과정을 기록하는 홍길동입니다.',
+    '안녕하세요. 웹을 만들고 그 과정을 기록하는 MAIJEUN입니다.',
     '이곳에는 제가 만든 것들, 생각한 것들, 그리고 저를 찾을 수 있는 곳들을 모아둡니다.',
   ],
 };
@@ -25,7 +25,7 @@ export const LINKS = [
   { label: 'GitHub', href: 'https://github.com/', handle: '@username' },
   { label: 'Instagram', href: 'https://instagram.com/', handle: '@username' },
   { label: 'YouTube', href: 'https://youtube.com/', handle: '채널 이름' },
-  { label: 'LinkedIn', href: 'https://linkedin.com/', handle: '홍길동' },
+  { label: 'LinkedIn', href: 'https://linkedin.com/', handle: 'MAIJEUN' },
   { label: 'Email', href: 'mailto:hello@example.com', handle: 'hello@example.com' },
 ];
 

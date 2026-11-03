@@ -29,7 +29,7 @@ MAIJEUN 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages
 | 블로그 글 | `src/content/blog/*.md` |
 | 블로그 레이아웃 (헤더·푸터) | `src/layouts/BlogLayout.astro` |
 
-`/about`, `/projects`, `/blog`, `/links` 페이지도 들어 있습니다. 메인에서 이 페이지들로 가는 링크는 아직 없습니다.
+메인 로고 아래에 작은 `blog` 링크가 있습니다. 로고 등장이 끝난 뒤 서서히 나타납니다. `/about`, `/projects`, `/links` 페이지도 들어 있지만 메인에서 가는 링크는 없습니다.
 
 ### 효과 조절
 

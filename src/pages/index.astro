@@ -6,7 +6,10 @@ import { SITE } from '../data/site';
 <Base bare>
   <main class="home">
     <h1 class="sr-only">{SITE.name}</h1>
-    <Logo class="logo" size="100%" />
+    <div class="mark">
+      <Logo class="logo" size="100%" />
+      <a class="blog-link" href="/blog">blog</a>
+    </div>
   </main>
   <canvas class="glass" aria-hidden="true"></canvas>
 </Base>
@@ -31,12 +34,33 @@ import { SITE } from '../data/site';
     place-items: center;
     padding: 24px;
   }
+  /* 로고는 화면 정가운데 그대로, 링크는 그 아래에 띄워 둠 */
+  .mark { position: relative; }
   .home :global(.logo) {
+    display: block;
     width: clamp(110px, 20vw, 190px);
     height: auto;
     color: var(--fg);
     transition: opacity 0.2s;
   }
+  .blog-link {
+    position: absolute;
+    z-index: 1; /* 유리 로고 캔버스 위 */
+    top: calc(100% + clamp(44px, 7vw, 64px));
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    letter-spacing: 0.24em;
+    text-indent: 0.24em; /* 자간 때문에 생기는 오른쪽 여백을 맞춰 가운데 정렬 */
+    color: var(--faint);
+    transition: color 0.2s;
+    animation: fade-in 0.8s ease 1.1s both; /* 로고 등장이 끝난 뒤 서서히 */
+  }
+  .blog-link:hover, .blog-link:focus-visible { color: var(--fg); }
+  .blog-link:focus-visible { outline: 1px solid var(--faint); outline-offset: 2px; border-radius: 4px; }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .blog-link { animation: none; } }
   .glass {
     position: fixed;
     inset: 0;

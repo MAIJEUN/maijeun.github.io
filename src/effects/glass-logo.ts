@@ -119,7 +119,10 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
 
   // 클릭/탭하면 한 바퀴 회전
   let spinTarget = 0;
-  addEventListener('click', () => (spinTarget += Math.PI * 2));
+  addEventListener('click', (e) => {
+    if ((e.target as Element | null)?.closest?.('a')) return; // 링크 클릭은 회전하지 않음
+    spinTarget += Math.PI * 2;
+  });
 
   const tilt = spring(40); // 로고 방향
   const spin = spring(18, 0.55); // 회전 (살짝 출렁이며 멈춤)

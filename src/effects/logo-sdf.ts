@@ -3,7 +3,7 @@ const LOGO_PATH = 'M8.64258 1.06641C13.8739 -1.10035 19.8955 0.0977467 23.8994 4
 
 export const SDF_SIZE = 512; // SDF 텍스처 해상도
 export const LOGO_FILL = 0.6; // 텍스처 안에서 로고가 차지하는 비율 (나머지는 일렁임/등장 여백)
-export const SDF_RANGE = 40; // 텍스처 값 0..1 이 표현하는 거리 (texel, 한쪽)
+export const SDF_RANGE = 64; // 텍스처 값 0..1 이 표현하는 거리 (texel, 한쪽)
 
 /** 1차원 제곱 거리 변환 (Felzenszwalb & Huttenlocher) */
 function edt1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Float64Array) {
@@ -29,11 +29,8 @@ function edt1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Fl
   }
 }
 
-/** 마스크에서 '안쪽 픽셀까지' 거리 (2차원) */
-function edt2d(mask: Uint8Array, n: number, target: number): Float64Array {
-  const INF = 1e20;
-  const grid = new Float64Array(n * n);
-  for (let i = 0; i < n * n; i++) grid[i] = mask[i] === target ? 0 : INF;
+/** 2차원 거리 변환. grid: 0 = 기준 픽셀, INF = 멀리, 그 사이 = 경계 픽셀의 제곱 거리 */
+function edt2d(grid: Float64Array, n: number): Float64Array {
   const f = new Float64Array(n), d = new Float64Array(n), z = new Float64Array(n + 1);
   const v = new Int32Array(n);
   for (let x = 0; x < n; x++) {
@@ -49,7 +46,10 @@ function edt2d(mask: Uint8Array, n: number, target: number): Float64Array {
   return grid;
 }
 
-/** 로고 path → 부호 있는 거리장 (rgba8, r 채널: 0.5 = 경계, 작을수록 안쪽) */
+/**
+ * 로고 path → 부호 있는 거리장.
+ * 값 0..1 (0.5 = 경계, 작을수록 안쪽)을 16비트로 r(상위)·g(하위) 두 채널에 나눠 저장합니다.
+ */
 export function buildLogoSdf(): Uint8Array {
   const n = SDF_SIZE;
   const canvas = document.createElement('canvas');
@@ -60,16 +60,30 @@ export function buildLogoSdf(): Uint8Array {
   ctx.fill(new Path2D(LOGO_PATH));
   const alpha = ctx.getImageData(0, 0, n, n).data;
 
-  const mask = new Uint8Array(n * n);
-  for (let i = 0; i < n * n; i++) mask[i] = alpha[i * 4 + 3] > 127 ? 1 : 0;
-  const toInside = edt2d(mask, n, 1);
-  const toOutside = edt2d(mask, n, 0);
+  // 안티앨리어싱된 경계 픽셀은 소수점 거리로 시작 (tiny-sdf 방식) → 매끈한 경계
+  const INF = 1e20;
+  const outer = new Float64Array(n * n);
+  const inner = new Float64Array(n * n);
+  for (let i = 0; i < n * n; i++) {
+    const a = alpha[i * 4 + 3] / 255;
+    if (a >= 1) { outer[i] = 0; inner[i] = INF; }
+    else if (a <= 0) { outer[i] = INF; inner[i] = 0; }
+    else {
+      const o = Math.max(0, 0.5 - a), q = Math.max(0, a - 0.5);
+      outer[i] = o * o;
+      inner[i] = q * q;
+    }
+  }
+  const toInside = edt2d(outer, n);
+  const toOutside = edt2d(inner, n);
 
   const out = new Uint8Array(n * n * 4);
   for (let i = 0; i < n * n; i++) {
     const d = toInside[i] - toOutside[i]; // 안쪽 음수, 바깥 양수
     const v = Math.min(1, Math.max(0, 0.5 + d / (2 * SDF_RANGE)));
-    out[i * 4] = Math.round(v * 255);
+    const v16 = Math.round(v * 65535);
+    out[i * 4] = v16 >> 8;
+    out[i * 4 + 1] = v16 & 255;
     out[i * 4 + 3] = 255;
   }
   return out;

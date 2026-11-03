@@ -7,18 +7,18 @@ import Logo from '../components/Logo.astro';
     <h1 class="sr-only">MIJ Studio</h1>
     <Logo class="logo" size="100%" />
   </main>
-  <canvas class="liquid" aria-hidden="true"></canvas>
+  <canvas class="glass" aria-hidden="true"></canvas>
 </Base>
 
 <script>
-  import { mountLiquidLogo } from '../effects/liquid-logo';
+  import { mountGlassLogo } from '../effects/glass-logo';
 
-  const canvas = document.querySelector<HTMLCanvasElement>('canvas.liquid')!;
+  const canvas = document.querySelector<HTMLCanvasElement>('canvas.glass')!;
   const logo = document.querySelector('.home .logo')!;
-  mountLiquidLogo(canvas, logo).catch((err) => {
+  mountGlassLogo(canvas, logo).catch((err) => {
     // WebGPU를 못 쓰는 환경이면 그냥 SVG 로고가 보입니다.
-    console.warn('[liquid-logo]', err);
-    document.documentElement.classList.remove('liquid-on');
+    console.warn('[glass-logo]', err);
+    document.documentElement.classList.remove('glass-on');
   });
 </script>
 
@@ -31,12 +31,12 @@ import Logo from '../components/Logo.astro';
     padding: 24px;
   }
   .home :global(.logo) {
-    width: clamp(64px, 12vw, 112px);
+    width: clamp(110px, 20vw, 190px);
     height: auto;
     color: var(--fg);
     transition: opacity 0.2s;
   }
-  .liquid {
+  .glass {
     position: fixed;
     inset: 0;
     width: 100%;
@@ -45,8 +45,8 @@ import Logo from '../components/Logo.astro';
     pointer-events: none;
     transition: opacity 0.2s;
   }
-  :global(html.liquid-on) .liquid { opacity: 1; }
-  :global(html.liquid-on) .home :global(.logo) { opacity: 0; }
+  :global(html.glass-on) .glass { opacity: 1; }
+  :global(html.glass-on) .home :global(.logo) { opacity: 0; }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

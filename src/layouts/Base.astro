@@ -2,8 +2,8 @@
 import '../styles/global.css';
 import { SITE, NAV, LINKS } from '../data/site';
 
-interface Props { title?: string; description?: string; bare?: boolean; }
-const { title, description = SITE.description, bare = false } = Astro.props;
+interface Props { title?: string; description?: string; bare?: boolean; bodyClass?: string; }
+const { title, description = SITE.description, bare = false, bodyClass } = Astro.props;
 const pageTitle = title ? `${title} — ${SITE.name}` : SITE.title;
 const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -24,7 +24,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <link rel="alternate" type="application/rss+xml" title={SITE.name} href="/rss.xml" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   </head>
-  <body>
+  <body class={bodyClass}>
     {!bare && (
     <header class="wrap site-header">
       <a href="/" class="brand">{SITE.name}</a>

@@ -1,7 +1,7 @@
 ---
 import { render } from 'astro:content';
-import Base from '../../layouts/Base.astro';
-import { getPosts } from '../../lib';
+import BlogLayout from '../../layouts/BlogLayout.astro';
+import { getPosts, readingMinutes, formatDate } from '../../lib';
 
 export async function getStaticPaths() {
   const posts = await getPosts();
@@ -13,28 +13,83 @@ export async function getStaticPaths() {
 
 const { post, newer, older } = Astro.props;
 const { Content } = await render(post);
-const date = post.data.date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 ---
-<Base title={post.data.title} description={post.data.description}>
+<BlogLayout title={post.data.title} description={post.data.description}>
   <article>
     <header class="post-head">
-      <a href="/blog" class="faint back">← 블로그</a>
+      <a href="/blog" class="glass pill back">← 블로그</a>
       <h1>{post.data.title}</h1>
-      <time class="faint" datetime={post.data.date.toISOString()}>{date}</time>
+      {post.data.description && <p class="desc">{post.data.description}</p>}
+      <div class="meta">
+        <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+        <span>·</span>
+        <span>{readingMinutes(post.body)}분 읽기</span>
+        {post.data.tags.map((t) => <span class="chip">{t}</span>)}
+      </div>
     </header>
-    <div class="prose"><Content /></div>
+
+    <div class="glass body">
+      <div class="prose"><Content /></div>
+    </div>
   </article>
-  <nav class="pager">
-    {older ? <a href={`/blog/${older.id}`}><span class="faint">이전 글</span><br />{older.data.title}</a> : <span />}
-    {newer && <a href={`/blog/${newer.id}`} class="right"><span class="faint">다음 글</span><br />{newer.data.title}</a>}
-  </nav>
-</Base>
+
+  {(older || newer) && (
+    <nav class="pager" aria-label="다른 글">
+      {older ? (
+        <a class="glass card" href={`/blog/${older.id}`}>
+          <span class="eyebrow">← 이전 글</span>
+          <span class="card-title">{older.data.title}</span>
+        </a>
+      ) : <span />}
+      {newer ? (
+        <a class="glass card next" href={`/blog/${newer.id}`}>
+          <span class="eyebrow">다음 글 →</span>
+          <span class="card-title">{newer.data.title}</span>
+        </a>
+      ) : <span />}
+    </nav>
+  )}
+</BlogLayout>
+
 <style>
-  .post-head { margin-bottom: 40px; }
-  .back { font-size: 0.875rem; display: inline-block; margin-bottom: 24px; }
-  .back:hover { color: var(--fg); }
-  .post-head time { font-size: 0.9rem; }
-  .pager { display: flex; justify-content: space-between; gap: 24px; margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 0.925rem; }
-  .pager a:hover { text-decoration: underline; text-underline-offset: 4px; }
-  .right { text-align: right; }
+  .post-head { margin-bottom: 28px; }
+  .back { margin-bottom: 28px; }
+  .post-head h1 {
+    font-size: clamp(1.9rem, 5.2vw, 2.6rem);
+    letter-spacing: -0.035em;
+    line-height: 1.25;
+    margin: 0 0 12px;
+  }
+  .desc { margin: 0 0 16px; color: var(--muted); font-size: 1.1rem; }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .body { --radius: 22px; padding: 40px 44px 24px; }
+  .body .prose > :global(:first-child) { margin-top: 0; }
+  .body .prose :global(pre) { border-radius: 12px; border-color: var(--line); }
+
+  .pager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 28px;
+  }
+  .card { display: flex; flex-direction: column; gap: 2px; padding: 18px 20px; }
+  .card .eyebrow { margin: 0; }
+  .card-title { font-weight: 560; }
+  .next { text-align: right; }
+
+  @media (max-width: 600px) {
+    .body { --radius: 18px; padding: 26px 20px 12px; }
+    .pager { grid-template-columns: 1fr; }
+    .pager > span { display: none; }
+    .next { text-align: left; }
+  }
 </style>

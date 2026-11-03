@@ -27,6 +27,8 @@ MIJ Studio 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pa
 | 로고 원본 | `public/logo.svg` |
 | 이름, 소개, 링크, 경력, 프로젝트 | `src/data/site.ts` |
 | 블로그 글 | `src/content/blog/*.md` |
+| 블로그 레이아웃 (유리 헤더·배경) | `src/layouts/BlogLayout.astro` |
+| 유리 카드 스타일 | `src/styles/glass.css` |
 
 `/about`, `/projects`, `/blog`, `/links` 페이지도 들어 있습니다. 메인에서 이 페이지들로 가는 링크는 아직 없습니다.
 

@@ -15,12 +15,12 @@ function cssColor(name: string): [number, number, number, number] {
 
 const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
 
-/** 스프링(임계 감쇠)으로 부드럽게 따라가기 */
-function spring(stiffness: number) {
+/** 스프링으로 부드럽게 따라가기 (damping 1 = 출렁임 없음, 1보다 작으면 살짝 출렁임) */
+function spring(stiffness: number, damping = 1) {
   const s = { x: 0, y: 0, vx: 0, vy: 0 };
   return Object.assign(s, {
     step(tx: number, ty: number, dt: number) {
-      const k = stiffness, c = 2 * Math.sqrt(k);
+      const k = stiffness, c = 2 * damping * Math.sqrt(k);
       s.vx += ((tx - s.x) * k - s.vx * c) * dt;
       s.vy += ((ty - s.y) * k - s.vy * c) * dt;
       s.x += s.vx * dt;
@@ -29,8 +29,20 @@ function spring(stiffness: number) {
   });
 }
 
+const MAX_TILT = 0.42; // 마우스 쪽으로 최대 기울기 (rad, ≈ 24°)
+
+/** yaw(좌우)·pitch(상하) 회전 → 블럭의 로컬 x/y/z 축 (월드 방향) */
+function axes(yaw: number, pitch: number) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  return {
+    axisU: [cy, 0, -sy, 0],
+    axisV: [sy * sp, cp, cy * sp, 0],
+    axisW: [sy * cp, -sp, cy * cp, 0],
+  };
+}
+
 /**
- * 원래 SVG 로고(placeholder) 자리에 WebGPU 유리 로고를 그립니다.
+ * 원래 SVG 로고(placeholder) 자리에 WebGPU 유리 블럭 로고를 그립니다.
  * WebGPU를 못 쓰거나 '동작 줄이기' 설정이면 false를 반환하고 SVG가 그대로 남습니다.
  */
 export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Element) {
@@ -57,7 +69,7 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
   });
   gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, buildLogoSdf(), { bytesPerRow: n * 4 }, [n, n]);
 
-  const screen = surface(gpu, canvas, { dpr: [1, 2] });
+  const screen = surface(gpu, canvas, { dpr: [1, 1.75] });
 
   // 레이아웃 기준값: 원래 SVG 자리를 그대로 따라감
   let center = { x: 0, y: 0 };
@@ -77,7 +89,7 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
   const glass = effect(gpu, logoShader, {
     label: 'glass-logo',
     set: {
-      params: { ...layout(), ...colors(), tilt: [0, 0], light: [0, 0], time: 0, intro: 0 },
+      params: { ...layout(), ...colors(), ...axes(0, 0), light: [0, 0], time: 0, intro: 0 },
       sdfTex: sdf,
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },
@@ -105,7 +117,12 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
     orient.at = performance.now();
   });
 
+  // 클릭/탭하면 한 바퀴 회전
+  let spinTarget = 0;
+  addEventListener('click', () => (spinTarget += Math.PI * 2));
+
   const tilt = spring(40); // 로고 방향
+  const spin = spring(18, 0.55); // 회전 (살짝 출렁이며 멈춤)
   const light = spring(90); // 하이라이트 위치
   tilt.x = -0.7; // 등장할 때 비스듬한 각도에서 정면으로
   tilt.y = 0.6;
@@ -143,11 +160,15 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
     }
     tilt.step(tx, ty, dt);
     light.step(lx, ly, dt);
+    spin.step(spinTarget, 0, dt);
+    // 마우스 쪽을 바라보도록: 오른쪽이면 yaw<0, 아래쪽이면 pitch>0
+    const yaw = -tilt.x * MAX_TILT + spin.x;
+    const pitch = tilt.y * MAX_TILT;
 
     const k = Math.min(1, t / 0.9);
     const intro = 1 - Math.pow(1 - k, 3);
 
-    glass.set({ params: { time: t, intro, tilt: [tilt.x, tilt.y], light: [light.x, light.y] } });
+    glass.set({ params: { time: t, intro, ...axes(yaw, pitch), light: [light.x, light.y] } });
     frame.pass(screen, glass);
 
     if (!shown) {

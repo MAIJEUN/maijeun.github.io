@@ -1,12 +1,15 @@
-// MIJ Studio — glass logo
-// 로고 SDF(거리장)로 둥근 유리 단면을 만들고, 마우스 방향으로 3D로 기울입니다.
-// 굴절(프리즘 분산 포함) · 반사 · 프레넬 · 커서 하이라이트 · 바닥 그림자.
+// MIJ Studio — glass block logo
+// 로고 외곽선을 두께가 있는 유리 블럭으로 돌출(extrude)시키고 레이마칭으로 그립니다.
+// 모서리는 45° 면취(chamfer). 빛이 블럭에 들어갈 때·나올 때 굴절(나올 때 색별 분산),
+// 표면 반사·프레넬, 커서 하이라이트, 바닥의 그림자·커스틱(빛 맺힘)·점 격자.
 
 struct Params {
   res: vec2f,      // 화면 크기 (CSS px)
   center: vec2f,   // 로고 중심 (CSS px)
-  tilt: vec2f,     // -1..1 : 로고가 바라보는 방향 (마우스 쪽)
-  light: vec2f,    // 하이라이트 광원 위치 (CSS px, 보통 커서)
+  light: vec2f,    // 커서 광원 위치 (CSS px)
+  axisU: vec4f,    // 블럭의 회전 (로컬 x/y/z 축의 월드 방향)
+  axisV: vec4f,
+  axisW: vec4f,
   box: f32,        // SDF 텍스처가 덮는 정사각형 한 변 (CSS px)
   range: f32,      // 텍스처 값 1.0 이 의미하는 거리 (CSS px)
   time: f32,
@@ -19,112 +22,190 @@ struct Params {
 @group(0) @binding(1) var sdfTex: texture_2d<f32>;
 @group(0) @binding(2) var sdfSampler: sampler;
 
-const MAX_TILT: f32 = 0.5;     // 최대 기울기 (≈ 27°)
-const PERSPECTIVE: f32 = 4.0;  // 시점 거리 = box × 이 값 (작을수록 원근 강함)
+// ── 조절용 값 (로고 단위: viewBox 128 기준) ──
+const DEPTH: f32 = 14.0;        // 블럭 두께의 절반
+const CHAMFER: f32 = 5.0;       // 모서리 45° 면취 크기
+const IOR: f32 = 1.5;           // 굴절률
+const DISPERSION: f32 = 0.03;  // 색 분산 (클수록 무지개 강함)
+const TINT: vec3f = vec3f(0.80, 0.93, 0.95); // 유리 색 (두꺼울수록 진해짐)
+const PERSPECTIVE: f32 = 4.0;   // 시점 거리 = box × 이 값
+const FLOAT: f32 = 0.05;        // 바닥에서 떠 있는 높이 (box 비율)
 
-struct Frame { u: vec3f, v: vec3f, n: vec3f, eye: vec3f, c: vec3f }
+fn unit() -> f32 { return params.box / 128.0; }
 
-fn plane() -> Frame {
-  // 로고 면의 법선(n)이 마우스 쪽을 바라봄. 화면 쪽(시청자)이 -z.
-  let n = normalize(vec3f(params.tilt * MAX_TILT, -1.0));
-  let u = normalize(cross(n, vec3f(0.0, 1.0, 0.0)));
-  let v = cross(u, n);
-  let c = vec3f(params.center, 0.0);
-  let eye = vec3f(params.center, -params.box * PERSPECTIVE);
-  return Frame(u, v, n, eye, c);
-}
-
-// 화면 점 p 에서 나온 시선이 기울어진 로고 면과 만나는 곳 (로고 로컬 좌표, px)
-fn toLocal(f: Frame, p: vec2f) -> vec2f {
-  let dir = vec3f(p, 0.0) - f.eye;
-  let t = dot(f.c - f.eye, f.n) / dot(dir, f.n);
-  let h = f.eye + dir * t - f.c;
-  return vec2f(dot(h, f.u), dot(h, f.v));
-}
-
-fn sdfAt(local: vec2f) -> f32 {
-  let q = local / params.box + 0.5;
+fn sdf2(pl: vec2f) -> f32 {
+  let q = pl / params.box + 0.5;
   let inside = clamp(q, vec2f(0.0), vec2f(1.0));
   let t = textureSampleLevel(sdfTex, sdfSampler, inside, 0.0);
   let s = (t.r * 65280.0 + t.g * 255.0) / 65535.0; // 16비트 = r(상위) + g(하위)
   return (s - 0.5) * 2.0 * params.range + length(q - inside) * params.box;
 }
 
-// 바닥(배경) — 기울어진 로고의 부드러운 그림자 포함
-fn backdrop(f: Frame, p: vec2f, scale: f32) -> vec3f {
-  let shift = vec2f(-params.tilt.x * 6.0, 10.0 - params.tilt.y * 6.0) * scale;
-  let d = sdfAt(toLocal(f, p - shift));
-  let blur = scale * 7.0;
-  let shadow = (1.0 - smoothstep(-blur, blur * 1.4, d)) * 0.16 * params.intro;
-  return params.bg.rgb * (1.0 - shadow);
+// 로컬 좌표의 블럭 SDF: 돌출 + 45° 면취
+fn sdf3(q: vec3f) -> f32 {
+  let s = unit();
+  let d2 = sdf2(q.xy);
+  let dz = abs(q.z) - DEPTH * s;
+  return max(max(d2, dz), (d2 + dz + CHAMFER * s) * 0.70710678);
 }
 
-// 반사되는 가상의 스튜디오 환경: 위는 밝고 아래는 어두움 + 띠 조명 두 줄
+fn normal3(q: vec3f) -> vec3f {
+  let e = 0.9 * unit();
+  let k = vec2f(1.0, -1.0);
+  return normalize(k.xyy * sdf3(q + k.xyy * e) + k.yyx * sdf3(q + k.yyx * e) +
+                   k.yxy * sdf3(q + k.yxy * e) + k.xxx * sdf3(q + k.xxx * e));
+}
+
+fn toLocal(v: vec3f) -> vec3f { return vec3f(dot(v, params.axisU.xyz), dot(v, params.axisV.xyz), dot(v, params.axisW.xyz)); }
+fn toWorld(v: vec3f) -> vec3f { return params.axisU.xyz * v.x + params.axisV.xyz * v.y + params.axisW.xyz * v.z; }
+
+fn eyePos() -> vec3f { return vec3f(params.center, -params.box * PERSPECTIVE); }
+fn pageZ() -> f32 { return DEPTH * unit() + params.box * FLOAT; }
+
+// 바닥(페이지) — 점 격자, 그림자, 커스틱
+fn backdrop(q: vec2f, soft: f32) -> vec3f {
+  let s = unit();
+  let fade = 1.0 - smoothstep(params.box * 0.45, params.box * 1.25, length(q - params.center));
+
+  // 점 격자
+  let g = s * 9.0;
+  let cell = (q - params.center) / g;
+  let dd = length(fract(cell + 0.5) - 0.5) * g;
+  // soft: 유리를 거쳐 본 바닥은 살짝 흐리게 (굴절로 늘어난 점이 줄무늬가 되지 않도록)
+  let dots = (1.0 - smoothstep(0.55 * s - soft, 0.95 * s + soft, dd)) * 0.16 * fade * (0.95 * s) / (0.95 * s + soft);
+  var col = mix(params.bg.rgb, params.fg.rgb, dots);
+
+  // 키 라이트(왼쪽 위 앞) 방향으로 블럭 가운데 면을 찾아 그림자
+  let toLight = normalize(vec3f(-0.22, -0.38, -1.0));
+  let o = toLocal(vec3f(q, pageZ()) - vec3f(params.center, 0.0));
+  let dl = toLocal(toLight);
+  let tt = -o.z / dl.z;
+  let d = sdf2(o.xy + dl.xy * tt);
+  let blur = s * 7.0 + soft;
+  let shadow = (1.0 - smoothstep(-blur, blur, d)) * (0.07 + 0.08 * smoothstep(-s * 14.0, 0.0, d));
+  col *= 1.0 - shadow * params.intro;
+
+  // 커스틱: 유리를 통과한 빛이 그림자 안쪽 가장자리에 색깔 띠로 맺힘
+  let k = vec3f(
+    exp(-pow((d + s * 3.0) / (s * 1.6), 2.0)),
+    exp(-pow((d + s * 3.8) / (s * 1.6), 2.0)),
+    exp(-pow((d + s * 4.6) / (s * 1.6), 2.0)),
+  );
+  let shimmer = 0.75 + 0.25 * sin(params.time * 1.3 + (o.x + o.y) / (s * 9.0));
+  col += k * 0.12 * shimmer * params.intro;
+  return col;
+}
+
+// 반사되는 스튜디오 환경: 위는 밝고 아래는 어두움 + 소프트박스 + 천천히 지나가는 빛줄기
 fn env(r: vec3f) -> vec3f {
-  let up = -r.y;
-  var c = mix(vec3f(0.08), vec3f(0.97), smoothstep(-0.45, 0.55, up));
-  let strip1 = smoothstep(0.93, 0.995, dot(r, normalize(vec3f(-0.55, -0.6, -0.58))));
-  let strip2 = smoothstep(0.96, 0.998, dot(r, normalize(vec3f(0.75, -0.15, -0.64))));
-  c += vec3f(1.0) * (strip1 * 0.9 + strip2 * 0.6);
+  var c = mix(vec3f(0.22), vec3f(0.95), smoothstep(-0.6, 0.7, -r.y));
+  let box1 = smoothstep(0.90, 0.99, dot(r, normalize(vec3f(-0.6, -0.55, -0.6))));
+  let box2 = smoothstep(0.95, 0.995, dot(r, normalize(vec3f(0.8, -0.1, -0.6))));
+  let a = params.time * 0.35;
+  let sweep = smoothstep(0.975, 0.998, dot(r, normalize(vec3f(sin(a) * 0.9, -0.25, -0.55))));
+  c += vec3f(1.0) * (box1 * 1.1 + box2 * 0.7 + sweep * 1.4);
   return c;
+}
+
+// 월드 광선이 바닥에 닿으면 바닥색, 아니면 환경
+fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
+  if (d.z > 0.02) {
+    let t = (pageZ() - o.z) / d.z;
+    return backdrop(o.xy + d.xy * t, soft);
+  }
+  return env(d);
 }
 
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
   let p = uv * params.res;
-  let scale = params.box / 128.0;
-  let f = plane();
+  let px = max(fwidth(p.x), 1e-3); // 화면 픽셀 1개 = CSS px
+  let s = unit();
+  let E = eyePos();
+  let rdW = normalize(vec3f(p, 0.0) - E);
 
-  let local = toLocal(f, p);
-  let d = sdfAt(local);
-  let w = max(fwidth(d), 0.001) * 0.75;
+  // 블럭 없는 곳의 바닥
+  let base = sceneRay(E, rdW, 0.0);
 
-  // SDF 기울기 = 가장자리에서 바깥쪽을 가리키는 방향
-  let e = params.box / 128.0;
-  let g2 = vec2f(sdfAt(local + vec2f(e, 0.0)) - sdfAt(local - vec2f(e, 0.0)),
-                 sdfAt(local + vec2f(0.0, e)) - sdfAt(local - vec2f(0.0, e)));
-  let g = g2 / max(length(g2), 1e-5);
+  // 로컬 공간 광선 + 바운딩 박스
+  let C = vec3f(params.center, 0.0);
+  let ro = toLocal(E - C);
+  let rd = toLocal(rdW);
+  let half = vec3f(params.box * 0.5, params.box * 0.5, DEPTH * s);
+  let inv = 1.0 / rd;
+  let t0 = (-half - ro) * inv;
+  let t1 = (half - ro) * inv;
+  let tn = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+  let tf = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
 
-  // 둥근 유리 단면 (가장자리에서 bevel 폭만큼 둥글게)
-  let bevel = scale * 11.0;
-  let s = clamp(-d / bevel, 0.0, 1.0);
-  let hgt = sqrt(max(1.0 - (1.0 - s) * (1.0 - s), 0.0));
-  let slope = (1.0 - s) / max(hgt, 0.3);
-  let nl = normalize(vec3f(g * slope, -1.0));
-  let N = normalize(f.u * nl.x + f.v * nl.y + f.n * (-nl.z));
+  var t = max(tn, 0.0);
+  var hit = false;
+  var minD = 1e9;
+  var tMin = t;
+  if (tn < tf) {
+    var done = false;
+    for (var i = 0; i < 128; i++) {
+      if (t > tf) { done = true; break; }
+      let d = sdf3(ro + rd * t);
+      if (d < minD) { minD = d; tMin = t; }
+      if (d < 0.25 * px) { hit = true; break; }
+      t += d;
+    }
+    // 좁은 틈에서 스텝을 다 쓴 경우: 표면에 거의 닿은 것으로 처리
+    if (!hit && !done && minD < 2.0 * px) { hit = true; t = tMin; }
+  }
 
-  let hit = f.eye + (vec3f(p, 0.0) - f.eye) * (dot(f.c - f.eye, f.n) / dot(vec3f(p, 0.0) - f.eye, f.n));
-  let V = normalize(hit - f.eye);
+  var col = base;
+  let cover = select(1.0 - smoothstep(0.0, px, minD), 1.0, hit);
+  if (cover > 0.0) {
+    let ph = ro + rd * select(tMin, t, hit);
+    let n = normal3(ph);
+    let nW = toWorld(n);
+    let phW = toWorld(ph) + C;
 
-  // 굴절 — 채널별로 굴절률을 달리해 프리즘 무지개 경계
-  let thick = scale * 16.0 * (0.35 + hgt);
-  let rr = refract(V, N, 1.0 / 1.42);
-  let rg = refract(V, N, 1.0 / 1.47);
-  let rb = refract(V, N, 1.0 / 1.53);
-  let body = vec3f(
-    backdrop(f, p + rr.xy / max(abs(rr.z), 0.6) * thick, scale).r,
-    backdrop(f, p + rg.xy / max(abs(rg.z), 0.6) * thick, scale).g,
-    backdrop(f, p + rb.xy / max(abs(rb.z), 0.6) * thick, scale).b,
-  );
-  // 유리의 옅은 색감 (두꺼울수록 조금 더)
-  var glass = mix(body, params.fg.rgb, 0.025 + 0.06 * hgt);
+    // 반사
+    let refl = sceneRay(phW, reflect(rdW, nW), 2.0 * s);
+    let cosv = clamp(dot(-rd, n), 0.0, 1.0);
+    let fres = 0.04 + 0.96 * pow(1.0 - cosv, 5.0);
 
-  // 반사 + 프레넬
-  let R = reflect(V, N);
-  let cosv = clamp(dot(-V, N), 0.0, 1.0);
-  let fres = 0.04 + 0.96 * pow(1.0 - cosv, 4.0);
-  glass = mix(glass, env(R), clamp(fres * 0.9, 0.0, 1.0));
+    // 투과: 들어가며 굴절 → 블럭 안을 지나 → 나오며 색별 굴절
+    let rIn = refract(rd, n, 1.0 / IOR);
+    var t2 = 0.6 * s;
+    var exited = false;
+    for (var j = 0; j < 64; j++) {
+      let d = -sdf3(ph + rIn * t2);
+      if (d < 0.25 * px) { exited = true; break; }
+      t2 += max(d, 0.12 * s);
+    }
+    let pe = ph + rIn * t2;
+    let ne = normal3(pe);
+    let peW = toWorld(pe) + C;
+    var trans = vec3f(0.0);
+    let oMid = refract(rIn, -ne, IOR);
+    if (!exited || dot(oMid, oMid) < 1e-4) {
+      // 전반사(빛이 안에서 튕김) — 잡음 대신 부드러운 빛으로
+      let r = toWorld(reflect(rIn, -ne));
+      trans = mix(params.bg.rgb * 0.7 + 0.15, vec3f(0.92), smoothstep(-0.6, 0.7, -r.y));
+    } else {
+      for (var k = 0; k < 3; k++) {
+        let eta = IOR + (f32(k) - 1.0) * DISPERSION;
+        var o = refract(rIn, -ne, eta);
+        if (dot(o, o) < 1e-4) { o = oMid; }
+        let sc = sceneRay(peW, toWorld(o), 2.5 * s);
+        trans[k] = sc[k];
+      }
+    }
+    let absorb = exp(-(t2 / s) * 0.022 * (1.0 - TINT));
+    trans *= absorb;
 
-  // 커서 하이라이트 (커서를 광원으로)
-  let L = normalize(vec3f(params.light, -params.box * 1.6) - hit);
-  let H = normalize(L - V);
-  let spec = pow(max(dot(N, H), 0.0), 90.0) * 1.3 + pow(max(dot(N, H), 0.0), 12.0) * 0.12;
-  glass += vec3f(spec);
+    var glass = mix(trans, refl, fres);
 
-  // 외곽선 살짝 (흰 배경에서도 형태가 보이도록)
-  let rim = 1.0 - smoothstep(0.0, scale * 1.6, -d);
-  glass = mix(glass, params.fg.rgb, rim * 0.22);
+    // 커서 하이라이트
+    let L = normalize(vec3f(params.light, -params.box * 1.5) - phW);
+    let H = normalize(L - rdW);
+    let nh = max(dot(nW, H), 0.0);
+    glass += vec3f(pow(nh, 160.0) * 1.6 + pow(nh, 18.0) * 0.08);
 
-  let a = (1.0 - smoothstep(-w, w, d)) * smoothstep(0.0, 1.0, params.intro);
-  let col = mix(backdrop(f, p, scale), clamp(glass, vec3f(0.0), vec3f(1.0)), a);
+    col = mix(base, clamp(glass, vec3f(0.0), vec3f(1.0)), cover * smoothstep(0.0, 1.0, params.intro));
+  }
   return vec4f(col, 1.0);
 }

@@ -230,10 +230,13 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       }
 
       const box = rect.w / LOGO_FILL;
+      // 로고 자리는 화면(viewport) 기준이지만 셰이더는 캔버스 기준으로 그림.
+      // 스크롤바 자리를 비워 두면 캔버스가 화면 왼쪽 끝이 아니라 그만큼 안쪽에서 시작하므로 빼 줌.
+      const cr = canvas.getBoundingClientRect();
       glass.set({
         params: {
           res: [canvas.clientWidth, canvas.clientHeight],
-          center: [rect.x, rect.y],
+          center: [rect.x - cr.left, rect.y - cr.top],
           box,
           range: (SDF_RANGE * box) / SDF_SIZE,
           time: t,
@@ -242,7 +245,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
           bgA,
           aa: tween ? 0 : 1, // 움직이는 동안은 모서리 안티앨리어싱을 꺼서 가볍게
           ...axes(yaw, pitch),
-          light: [light.x, light.y],
+          light: [light.x - cr.left, light.y - cr.top],
         },
       });
       frame.pass(screen, glass);

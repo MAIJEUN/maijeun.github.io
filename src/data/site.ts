@@ -21,13 +21,13 @@ export const NAV = [
 ];
 
 // 링크 페이지 (벤토 카드). 위에서부터 순서대로, 2열 그리드에 채워집니다.
-// - service: 아이콘과 색 ('github' | 'youtube' | 'discord' | 'steam' | 'link')
+// - service: 아이콘과 색 ('github' | 'youtube' | 'discord' | 'steam' | 'tuforums' | 'link'). link 는 기본 지구본 아이콘
 // - wide: true 면 한 줄을 다 씀
 // - items: 카드 안의 칸. 2개 이상이면 카드가 나뉨 (첫 칸이 조금 더 넓음)
 //   - href: 누르면 이동 / copy: 누르면 이 글자를 복사 (둘 중 하나)
 //   - note: 짧은 한 줄 설명 (선택)
 export type LinkItem = { title: string; handle: string; href?: string; copy?: string; note?: string };
-export type LinkGroup = { service: 'github' | 'youtube' | 'discord' | 'steam' | 'link'; wide?: boolean; items: LinkItem[] };
+export type LinkGroup = { service: 'github' | 'youtube' | 'discord' | 'steam' | 'tuforums' | 'link'; wide?: boolean; items: LinkItem[] };
 
 export const LINK_GROUPS: LinkGroup[] = [
   {
@@ -35,7 +35,7 @@ export const LINK_GROUPS: LinkGroup[] = [
     wide: true,
     items: [
       { title: 'GitHub', handle: 'github.com/MAIJEUN', href: 'https://github.com/MAIJEUN' },
-      { title: 'mij-studio', handle: 'github.com/mij-studio', href: 'https://github.com/mij-studio' },
+      { title: 'MIJ Studio', handle: 'github.com/mij-studio', href: 'https://github.com/mij-studio' },
     ],
   },
   {
@@ -54,7 +54,11 @@ export const LINK_GROUPS: LinkGroup[] = [
   },
   {
     service: 'steam',
-    items: [{ title: 'Steam', handle: 'MAIJEUN', copy: 'MAIJEUN' }],
+    items: [{ title: 'Steam', handle: 'steamcommunity.com/id/MAIJEUN', href: 'https://steamcommunity.com/id/MAIJEUN/' }],
+  },
+  {
+    service: 'tuforums',
+    items: [{ title: 'TUForums', handle: 'tuforums.com/profile/1342', href: 'https://tuforums.com/profile/1342' }],
   },
 ];
 

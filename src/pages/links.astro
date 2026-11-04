@@ -2,14 +2,23 @@
 import { siDiscord, siGithub, siSteam, siYoutube } from 'simple-icons';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { LINK_GROUPS, type LinkGroup } from '../data/site';
+import tufSvg from '../assets/icons/tuforums.svg?raw';
 
-// 서비스별 아이콘(Simple Icons, CC0)과 카드 색
-const SERVICES: Record<LinkGroup['service'], { path?: string; color: string }> = {
-  github: { path: siGithub.path, color: '#8b949e' },
-  youtube: { path: siYoutube.path, color: '#ff0033' },
-  discord: { path: siDiscord.path, color: '#5865f2' },
-  steam: { path: siSteam.path, color: '#66c0f4' },
-  link: { color: '#8b949e' },
+// 서비스별 아이콘(Simple Icons, CC0)과 카드 색. color 가 없으면 기본(무채색) 카드
+const filled = (path: string) => `<path d="${path}" fill="currentColor" />`;
+const GLOBE =
+  '<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9M12 3c-2.5 2.6-3.8 5.6-3.8 9s1.3 6.4 3.8 9" /></g>';
+// SVG 파일에서 <svg> 태그 안쪽과 viewBox만 꺼내 씀
+const inner = (svg: string) => svg.replace(/^[\s\S]*?<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+const viewBoxOf = (svg: string) => svg.match(/viewBox="([^"]+)"/)?.[1] ?? '0 0 24 24';
+
+const SERVICES: Record<LinkGroup['service'], { icon: string; viewBox?: string; color?: string }> = {
+  github: { icon: filled(siGithub.path) },
+  youtube: { icon: filled(siYoutube.path), color: '#ff0033' },
+  discord: { icon: filled(siDiscord.path), color: '#5865f2' },
+  steam: { icon: filled(siSteam.path) },
+  tuforums: { icon: inner(tufSvg), viewBox: viewBoxOf(tufSvg) },
+  link: { icon: GLOBE },
 };
 ---
 <SiteLayout title="링크" description="여기저기 있는 저를 찾을 수 있는 곳" wide>
@@ -22,15 +31,15 @@ const SERVICES: Record<LinkGroup['service'], { path?: string; color: string }> =
     {LINK_GROUPS.map((g) => {
       const svc = SERVICES[g.service];
       return (
-        <div class:list={['card', { wide: g.wide, split: g.items.length > 1, compact: g.items.length === 1 }]} style={`--brand: ${svc.color}`}>
+        <div class:list={['card', { wide: g.wide, split: g.items.length > 1, compact: g.items.length === 1, neutral: !svc.color }]} style={svc.color ? `--brand: ${svc.color}` : undefined}>
           {g.items.map((item, i) => {
             const ext = !!item.href && /^https?:/.test(item.href);
             const inner = (
               <>
                 <span class="cell-top">
-                  {i === 0 && svc.path ? (
+                  {i === 0 ? (
                     <span class="icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" width="22" height="22"><path d={svc.path} fill="currentColor" /></svg>
+                      <svg viewBox={svc.viewBox ?? '0 0 24 24'} width="22" height="22" set:html={svc.icon} />
                     </span>
                   ) : <span />}
                   <span class="action">
@@ -113,6 +122,15 @@ const SERVICES: Record<LinkGroup['service'], { path?: string; color: string }> =
     transition: border-color 0.2s;
   }
   .card.wide { grid-column: 1 / -1; }
+  /* 브랜드 색 없는 기본 카드 */
+  .card.neutral {
+    --brand: var(--fg);
+    --tint: var(--bg);
+    --edge: var(--line);
+  }
+  .card.neutral:hover { --edge: color-mix(in srgb, var(--fg) 22%, var(--line)); }
+  .neutral .icon { background: var(--hover); }
+  .neutral .cell:hover { background: var(--hover); }
   .card:hover { --edge: color-mix(in srgb, var(--brand) 45%, var(--line)); }
 
   .cell {

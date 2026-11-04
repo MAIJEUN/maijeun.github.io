@@ -36,7 +36,7 @@ MAIJEUN 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages
 
 - **프로젝트:** `src/data/site.ts`의 `PROJECTS` 배열에 항목을 추가합니다.
 - **링크:** 링크 페이지는 서비스별 카드가 2열로 배치되는 벤토 그리드입니다. `LINK_GROUPS` 배열에 항목을 추가합니다.
-  - `service`: 아이콘과 카드 색을 정합니다. `github`, `youtube`, `discord`, `steam`, `link` 중 하나입니다.
+  - `service`: 아이콘과 카드 색을 정합니다. `github`, `youtube`, `discord`, `steam`, `tuforums`, `link` 중 하나입니다. `link`는 기본 지구본 아이콘이고, 브랜드 색을 정하지 않은 서비스는 기본(무채색) 카드가 됩니다. 직접 받은 로고는 `src/assets/icons/`에 SVG로 두고 불러옵니다.
   - `wide: true`: 카드가 한 줄을 다 씁니다.
   - `items`: 카드 안의 칸입니다. 2개 이상이면 카드가 나뉘고, 1개면 낮은 가로 카드가 됩니다.
   - `href` / `copy`: `href`가 있으면 누를 때 이동하고, `copy`가 있으면 누를 때 그 글자가 복사됩니다.

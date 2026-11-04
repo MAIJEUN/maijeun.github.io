@@ -56,7 +56,7 @@ import { SITE } from '../data/site';
   }
   .home-links a:hover, .home-links a:focus-visible { color: var(--fg); }
   .home-links a:focus-visible { outline: 1px solid var(--faint); outline-offset: 2px; border-radius: 4px; }
-  :global(html.returning) .home-links { animation: none; }
+  :global(html.returning) .home-links { animation-duration: 0.28s; animation-delay: 0s; } /* 다른 페이지에서 돌아오면 바로 */
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .home-links { animation: none; } }
 

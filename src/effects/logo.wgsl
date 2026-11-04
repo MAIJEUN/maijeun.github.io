@@ -3,6 +3,7 @@
 // 외곽은 90°로 각진 블럭이고, 앞뒤 면은 애플 리퀴드 글래스처럼 가운데는 평평하고 가장자리만 렌즈처럼 휘어
 // 뒤가 크게 굴절돼 보입니다. 빛이 들어갈 때·나올 때 굴절(나올 때 색별 분산), 선명한 스튜디오 반사·프레넬,
 // 커서 쪽 가장자리에 맺히는 가는 빛선(림 라이트), 바닥의 그림자·커스틱(빛 맺힘)·점 격자.
+// 점 격자는 사이트 전체 배경(CSS)이 그리고, 이 셰이더는 유리 너머로 보이는 점과 그림자·커스틱만 그림.
 
 struct Params {
   res: vec2f,      // 화면 크기 (CSS px)
@@ -17,7 +18,7 @@ struct Params {
   intro: f32,      // 0 → 1 : 등장
   solid: f32,      // 1 = 평면 단색 로고(SVG와 똑같이), 0 = 유리. 페이지 전환 때 이어지게
   thick: f32,      // 두께 비율 0 → 1 (0이면 종이처럼 얇음)
-  bgA: f32,        // 배경(바닥·점 격자·그림자) 불투명도. 1 = 홈 화면, 0 = 로고만 (다른 페이지 위를 날아갈 때)
+  bgA: f32,        // 바닥의 그림자·커스틱 세기. 1 = 홈 화면, 0 = 로고만 (다른 페이지 위를 날아갈 때)
   aa: f32,         // 1 = 모서리 안티앨리어싱 켬, 0 = 끔 (날아가는 동안 가볍게)
   fg: vec4f,
   bg: vec4f,
@@ -91,19 +92,29 @@ fn toWorld(v: vec3f) -> vec3f { return params.axisU.xyz * v.x + params.axisV.xyz
 fn eyePos() -> vec3f { return vec3f(params.center, -params.box * PERSPECTIVE); }
 fn pageZ() -> f32 { return DEPTH * unit() + params.box * FLOAT; }
 
-// 바닥(페이지) — 점 격자, 그림자, 커스틱
-fn backdrop(q: vec2f, soft: f32) -> vec3f {
-  let s = unit();
-  let fade = 1.0 - smoothstep(params.box * 0.45, params.box * 1.25, length(q - params.center));
+// 바닥(페이지) 점 격자 — 사이트 전체 배경(global.css 의 body::before)과 똑같이: 캔버스 왼쪽 위 기준
+// DOT_GAP 간격, 칸 가운데에 반지름 DOT_R0~DOT_R1 로 흐려지는 점, 글자색을 DOT_INK 만큼 섞은 색
+const DOT_GAP: f32 = 22.0;
+const DOT_R0: f32 = 1.35;
+const DOT_R1: f32 = 2.35;
+const DOT_INK: f32 = 0.16;
 
-  // 점 격자
-  let g = s * 9.0;
-  let cell = (q - params.center) / g;
-  let dd = length(fract(cell + 0.5) - 0.5) * g;
+// 바닥 위 한 점이 화면(z = 0)에서는 어디로 보이는지 — 점 격자를 화면 배경과 같은 자리에 맞추기 위해
+fn floorToScreen(q: vec2f) -> vec2f {
+  let e = params.box * PERSPECTIVE;
+  return params.center + (q - params.center) * e / (pageZ() + e);
+}
+
+fn dotAmount(q: vec2f, soft: f32) -> f32 {
+  let p = floorToScreen(q);
+  let dd = length(fract(p / DOT_GAP) - 0.5) * DOT_GAP;
   // soft: 유리를 거쳐 본 바닥은 살짝 흐리게 (굴절로 늘어난 점이 줄무늬가 되지 않도록)
-  let dots = (1.0 - smoothstep(0.55 * s - soft, 0.95 * s + soft, dd)) * 0.16 * fade * (0.95 * s) / (0.95 * s + soft);
-  var col = mix(params.bg.rgb, params.fg.rgb, dots * (1.0 - params.solid));
+  return (1.0 - smoothstep(DOT_R0 - soft, DOT_R1 + soft, dd)) * DOT_INK * DOT_R1 / (DOT_R1 + soft);
+}
 
+// 블럭이 바닥에 드리우는 빛: rgb = 더해지는 커스틱, a = 그림자 진하기
+fn floorLight(q: vec2f, soft: f32) -> vec4f {
+  let s = unit();
   // 키 라이트(왼쪽 위 앞) 방향으로 블럭 가운데 면을 찾아 그림자
   let toLight = normalize(vec3f(-0.22, -0.38, -1.0));
   let o = toLocal(vec3f(q, pageZ()) - vec3f(params.center, 0.0));
@@ -112,7 +123,7 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
   let d = sdf2(o.xy + dl.xy * tt);
   let blur = s * 7.0 + soft;
   let shadow = (1.0 - smoothstep(-blur, blur, d)) * (0.07 + 0.08 * smoothstep(-s * 14.0, 0.0, d));
-  col *= 1.0 - shadow * params.intro * (1.0 - params.solid);
+  let on = params.intro * (1.0 - params.solid);
 
   // 커스틱: 유리를 통과한 빛이 그림자 안쪽 가장자리에 색깔 띠로 맺힘
   let k = vec3f(
@@ -121,8 +132,13 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
     exp(-pow((d + s * 4.6) / (s * 1.6), 2.0)),
   );
   let shimmer = 0.75 + 0.25 * sin(params.time * 1.3 + (o.x + o.y) / (s * 9.0));
-  col += k * 0.12 * shimmer * params.intro * (1.0 - params.solid);
-  return col;
+  return vec4f(k * 0.12 * shimmer * on, shadow * on);
+}
+
+// 바닥 색 (유리를 거쳐 보이는 곳): 점 격자 위에 그림자·커스틱
+fn backdrop(q: vec2f, soft: f32) -> vec3f {
+  let l = floorLight(q, soft);
+  return mix(params.bg.rgb, params.fg.rgb, dotAmount(q, soft)) * (1.0 - l.a) + l.rgb;
 }
 
 fn rect(az: f32, el: f32, c: vec2f, h: vec2f, soft: f32) -> f32 {
@@ -161,8 +177,8 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   let E = eyePos();
   let rdW = normalize(vec3f(p, 0.0) - E);
 
-  // 블럭 없는 곳의 바닥
-  let base = sceneRay(E, rdW, 0.0);
+  // 블럭 없는 곳: 바닥(점 격자)은 페이지 배경이 이미 그리므로, 그 위에 그림자·커스틱만 덧그림
+  let under = floorLight(E.xy + rdW.xy * ((pageZ() - E.z) / rdW.z), 0.0);
 
   // 로컬 공간 광선 + 바운딩 박스
   let C = vec3f(params.center, 0.0);
@@ -192,7 +208,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     if (!hit && !done && minD < 2.0 * px) { hit = true; t = tMin; }
   }
 
-  var col = base;
+  var logo = vec3f(0.0); // 로고 색 × 덮은 정도 (미리 알파를 곱한 색)
   var cov = 0.0; // 로고가 덮은 정도
   // 바깥 윤곽선 근처 (스치듯 지나간 광선)
   var edge = tn < tf && !hit && minD < 2.5 * px;
@@ -263,13 +279,12 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
 
     // solid = 1 이면 SVG 로고와 똑같은 단색 → 0 으로 가며 유리로
     let look = mix(clamp(glass, vec3f(0.0), vec3f(1.0)), params.fg.rgb, params.solid);
-    col = mix(base, look, cover * smoothstep(0.0, 1.0, params.intro));
     cov = cover * smoothstep(0.0, 1.0, params.intro);
+    logo = look * cov;
   }
-  // 배경은 bgA 만큼만 그림 (0 이면 로고만 보이고 뒤 페이지가 비침)
-  let alpha = params.bgA * (1.0 - cov) + cov;
-  let logoPart = col - base * (1.0 - cov); // = look * cov
-  return Sample(vec4f(base * params.bgA * (1.0 - cov) + logoPart, alpha), edge);
+  // 로고 바깥: 그림자(검게 덮는 정도 = 알파)와 커스틱(더하는 빛)만 bgA 만큼. 나머지는 투명해 페이지 배경이 그대로 보임
+  let ov = under * params.bgA * (1.0 - cov);
+  return Sample(vec4f(logo + ov.rgb, cov + ov.a), edge);
 }
 
 // 안티앨리어싱: 모서리 근처 픽셀만 한 픽셀 안을 4점 더 (회전 격자) 샘플링해 평균

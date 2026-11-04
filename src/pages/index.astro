@@ -12,7 +12,7 @@ import { SITE } from '../data/site';
       <nav class="home-links" aria-label="사이트">
         <a href="/blog">blog</a>
         <a href="/projects">projects</a>
-        <a href="/links">links</a>
+        <a href="/sns">sns</a>
       </nav>
     </div>
   </main>
@@ -81,7 +81,7 @@ import { SITE } from '../data/site';
     width: clamp(110px, 20vw, 190px);
     height: auto;
     color: var(--fg);
-    transition: opacity 0.2s;
+    transition: opacity 0.35s ease;
   }
   .home-links {
     position: absolute;
@@ -114,7 +114,7 @@ import { SITE } from '../data/site';
     height: 100%;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s;
+    transition: opacity 0.35s ease;
   }
   :global(html.glass-on) .glass { opacity: 1; }
   :global(html.glass-on) .home :global(.logo) { opacity: 0; }

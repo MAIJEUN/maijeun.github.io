@@ -9,7 +9,7 @@ const { title, description, wide = false } = Astro.props;
 const nav = [
   { href: '/blog', label: 'Blog' },
   { href: '/projects', label: 'Projects' },
-  { href: '/links', label: 'Links' },
+  { href: '/sns', label: 'SNS' },
 ];
 const path = Astro.url.pathname;
 ---
@@ -17,8 +17,7 @@ const path = Astro.url.pathname;
   <header class:list={["page top", { wide }]}>
     <a href="/" class="home" aria-label={`${SITE.name} 홈`}>
       <!-- 메인의 큰 로고와 같은 이름: 페이지를 오갈 때 로고가 이어져 움직임 -->
-      <span class="mark" transition:name="site-logo"><Logo size={20} /></span>
-      <span>{SITE.name}</span>
+      <span class="mark" transition:name="site-logo"><Logo size={22} /></span>
     </a>
     <nav aria-label="사이트">
       {nav.map((n) => (
@@ -56,7 +55,7 @@ const path = Astro.url.pathname;
     padding-top: 28px;
   }
   .home { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
-  .mark { display: inline-flex; width: 20px; height: 20px; }
+  .mark { display: inline-flex; width: 22px; height: 22px; }
   nav { display: flex; gap: 20px; font-size: 0.925rem; }
   nav a { color: var(--muted); transition: color 0.15s; }
   nav a:hover, nav a.active { color: var(--fg); }
@@ -75,7 +74,6 @@ const path = Astro.url.pathname;
   .foot a:hover { color: var(--fg); }
 
   @media (max-width: 480px) {
-    .home span:last-child { display: none; }
     nav { gap: 16px; }
     main.page { padding-top: 44px; }
   }

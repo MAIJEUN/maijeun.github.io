@@ -88,3 +88,14 @@ a.row:hover .row-title { text-decoration: underline; text-underline-offset: 4px;
     background-color: var(--shiki-dark-bg) !important;
   }
 }
+
+/* 페이지 전환: 홈의 큰 로고 ↔ 헤더의 작은 로고
+   두 이미지를 섞으면 작은 쪽이 확대되며 흐릿해 보이므로, 큰 쪽(선명한) 이미지 하나만 크기를 바꿔 이동 */
+::view-transition-group(site-logo) {
+  animation-duration: 0.5s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+html.to-home::view-transition-old(site-logo) { display: none !important; }
+html.to-home::view-transition-new(site-logo) { animation: none !important; opacity: 1 !important; }
+html.from-home::view-transition-new(site-logo) { display: none !important; }
+html.from-home::view-transition-old(site-logo) { animation: none !important; opacity: 1 !important; }

@@ -17,10 +17,10 @@ export const NAV = [
   { href: '/about', label: '소개' },
   { href: '/projects', label: '프로젝트' },
   { href: '/blog', label: '블로그' },
-  { href: '/links', label: '링크' },
+  { href: '/sns', label: 'SNS' },
 ];
 
-// 링크 페이지 (벤토 카드). 위에서부터 순서대로, 2열 그리드에 채워집니다.
+// SNS 페이지 (벤토 카드). 위에서부터 순서대로, 2열 그리드에 채워집니다.
 // - service: 아이콘과 색 ('github' | 'youtube' | 'discord' | 'steam' | 'tuforums' | 'link'). link 는 기본 지구본 아이콘
 // - wide: true 면 한 줄을 다 씀
 // - items: 카드 안의 칸. 2개 이상이면 카드가 나뉨 (첫 칸이 조금 더 넓음)

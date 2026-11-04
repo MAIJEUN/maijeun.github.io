@@ -1,4 +1,5 @@
 import { clock, effect, frameLoop, init, sampler, surface, texture } from 'vgpu';
+import type { Effect, Gpu } from 'vgpu';
 import logoShader from './logo.wgsl';
 import { buildLogoSdf, LOGO_FILL, SDF_RANGE, SDF_SIZE } from './logo-sdf';
 
@@ -64,6 +65,45 @@ if (typeof window !== 'undefined') {
 let sdfCache: Uint8Array | undefined; // 로고 거리장은 한 번만 계산
 let mountedBefore = false; // 두 번째부터는 등장 애니메이션 없이 바로
 
+// GPU 장치·로고 텍스처·셰이더는 페이지를 오가도 켜 둔 채로 다시 씀.
+// 홈으로 돌아올 때 새로 켜느라 평면 로고가 오래 보이지 않도록.
+type Shared = { gpu: Gpu; glass: Effect; dead: boolean };
+let shared: Shared | undefined;
+
+async function getShared(): Promise<Shared> {
+  if (shared && !shared.dead) return shared;
+  const gpu = await init();
+  const n = SDF_SIZE;
+  const sdf = texture(gpu, {
+    kind: '2d',
+    size: [n, n],
+    format: 'rgba8unorm',
+    usage: ['texture_binding', 'copy_dst'],
+    label: 'logo-sdf',
+  });
+  sdfCache ??= buildLogoSdf();
+  gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, sdfCache, { bytesPerRow: n * 4 }, [n, n]);
+  const glass = effect(gpu, logoShader, {
+    label: 'glass-logo',
+    set: {
+      params: {
+        res: [1, 1], center: [0, 0], box: 1, range: 1,
+        fg: [0, 0, 0, 1], bg: [1, 1, 1, 1],
+        ...axes(0, 0), light: [0, 0], time: 0, intro: 0,
+      },
+      sdfTex: sdf,
+      sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
+    },
+  });
+  const s: Shared = { gpu, glass, dead: false };
+  gpu.lost.then(() => {
+    s.dead = true;
+    if (shared === s) shared = undefined;
+  });
+  shared = s;
+  return s;
+}
+
 /**
  * 원래 SVG 로고(placeholder) 자리에 WebGPU 유리 블럭 로고를 그립니다.
  * 정리 함수를 돌려줍니다 (페이지를 떠날 때 호출).
@@ -76,12 +116,15 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
   const firstTime = !mountedBefore;
   mountedBefore = true;
 
-  const gpu = await init();
+  const sh = await getShared();
+  const { gpu, glass } = sh;
   const ac = new AbortController();
   const { signal } = ac;
   let loop: { stop(): void } | undefined;
   let unsubResize: (() => void) | undefined;
   let disposed = false;
+
+  const screen = surface(gpu, canvas, { dpr: [1, 1.75] });
 
   const dispose = () => {
     if (disposed) return;
@@ -89,29 +132,20 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
     ac.abort();
     loop?.stop();
     unsubResize?.();
+    offError();
+    screen.dispose();
     document.documentElement.classList.remove(ON_CLASS);
-    gpu.dispose();
   };
-  // GPU 쪽에서 문제가 생기면 원래 SVG 로고로 되돌림
+  // GPU 쪽에서 문제가 생기면 원래 SVG 로고로 되돌리고, 다음에는 GPU를 새로 켬
   const fallback = (why: unknown) => {
     if (disposed) return;
     console.warn('[glass-logo]', why);
     dispose();
+    sh.dead = true;
+    if (shared === sh) shared = undefined;
+    gpu.dispose();
   };
-  gpu.onError(fallback);
-
-  const n = SDF_SIZE;
-  const sdf = texture(gpu, {
-    kind: '2d',
-    size: [n, n],
-    format: 'rgba8unorm',
-    usage: ['texture_binding', 'copy_dst'],
-    label: 'logo-sdf',
-  });
-  sdfCache ??= buildLogoSdf();
-  gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, sdfCache, { bytesPerRow: n * 4 }, [n, n]);
-
-  const screen = surface(gpu, canvas, { dpr: [1, 1.75] });
+  const offError = gpu.onError(fallback);
 
   // 레이아웃 기준값: 원래 SVG 자리를 그대로 따라감
   let center = { x: 0, y: 0 };
@@ -123,19 +157,11 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
       res: [canvas.clientWidth, canvas.clientHeight],
       center: [center.x, center.y],
       box,
-      range: (SDF_RANGE * box) / n,
+      range: (SDF_RANGE * box) / SDF_SIZE,
     };
   };
   const colors = () => ({ fg: cssColor('--fg'), bg: cssColor('--bg') });
-
-  const glass = effect(gpu, logoShader, {
-    label: 'glass-logo',
-    set: {
-      params: { ...layout(), ...colors(), ...axes(0, 0), light: [0, 0], time: 0, intro: firstTime ? 0 : 1 },
-      sdfTex: sdf,
-      sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
-    },
-  });
+  glass.set({ params: { ...layout(), ...colors(), ...axes(0, 0), time: 0, intro: firstTime ? 0 : 1 } });
 
   const relayout = () => glass.set({ params: layout() });
   unsubResize = screen.onResize(relayout);
@@ -211,6 +237,6 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
     }
   });
 
-  gpu.lost.then(fallback);
+  gpu.lost.then(() => fallback('GPU device lost'));
   return dispose;
 }

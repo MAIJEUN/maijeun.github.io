@@ -28,20 +28,20 @@ MAIJEUN 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages
 | 이름, 링크 목록, 프로젝트 목록 (소개·경력도) | `src/data/site.ts` |
 | 블로그 글 | `src/content/blog/*.md` |
 | 서브 페이지 공통 레이아웃 (헤더·푸터) | `src/layouts/SiteLayout.astro` |
-| 블로그 / 프로젝트 / 링크 페이지 | `src/pages/blog/`, `src/pages/projects.astro`, `src/pages/links.astro` |
+| 블로그 / 프로젝트 / SNS 페이지 | `src/pages/blog/`, `src/pages/projects.astro`, `src/pages/sns.astro` |
 
-메인 로고 아래에 작은 `blog · projects · links` 링크가 있고, 로고 등장이 끝난 뒤 서서히 나타납니다. 서브 페이지 헤더에도 같은 메뉴가 있습니다. (`/about` 페이지도 남아 있지만 링크는 없습니다.)
+메인 로고 아래에 작은 `blog · projects · sns` 링크가 있고, 로고 등장이 끝난 뒤 서서히 나타납니다. 서브 페이지 헤더에도 같은 메뉴가 있습니다. (`/about` 페이지도 남아 있지만 링크는 없습니다.)
 
-### 프로젝트·링크 고치기
+### 프로젝트·SNS 고치기
 
 - **프로젝트:** `src/data/site.ts`의 `PROJECTS` 배열에 항목을 추가합니다.
-- **링크:** 링크 페이지는 서비스별 카드가 2열로 배치되는 벤토 그리드입니다. `LINK_GROUPS` 배열에 항목을 추가합니다.
+- **SNS:** SNS 페이지(`/sns`)는 서비스별 카드가 2열로 배치되는 벤토 그리드입니다. `LINK_GROUPS` 배열에 항목을 추가합니다.
   - `service`: 아이콘과 카드 색을 정합니다. `github`, `youtube`, `discord`, `steam`, `tuforums`, `link` 중 하나입니다. `link`는 기본 지구본 아이콘이고, 브랜드 색을 정하지 않은 서비스는 기본(무채색) 카드가 됩니다. 직접 받은 로고는 `src/assets/icons/`에 SVG로 두고 불러옵니다.
   - `wide: true`: 카드가 한 줄을 다 씁니다.
   - `items`: 카드 안의 칸입니다. 2개 이상이면 카드가 나뉘고, 1개면 낮은 가로 카드가 됩니다.
   - `href` / `copy`: `href`가 있으면 누를 때 이동하고, `copy`가 있으면 누를 때 그 글자가 복사됩니다.
   - `note`: 짧은 한 줄 설명입니다. 넣지 않아도 됩니다.
-  - 새 서비스 아이콘은 `src/pages/links.astro`의 `SERVICES`에 [Simple Icons](https://simpleicons.org)에서 가져와 추가합니다.
+  - 새 서비스 아이콘은 `src/pages/sns.astro`의 `SERVICES`에 [Simple Icons](https://simpleicons.org)에서 가져와 추가합니다.
 
 ### 페이지 전환
 

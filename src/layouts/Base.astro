@@ -5,7 +5,8 @@ import { SITE, NAV, LINKS } from '../data/site';
 
 interface Props { title?: string; description?: string; bare?: boolean; }
 const { title, description = SITE.description, bare = false } = Astro.props;
-const pageTitle = title ? `${title} — ${SITE.name}` : SITE.title;
+// 탭 제목은 어느 페이지든 사이트 이름으로 고정
+const pageTitle = SITE.name;
 const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
@@ -54,6 +55,34 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     )}
   </body>
 </html>
+
+<script>
+  // 로고 전환 방향 표시: 홈으로 갈 때(to-home) / 홈에서 나갈 때(from-home).
+  // CSS(global.css)가 이걸 보고 큰 쪽의 선명한 로고 이미지만 써서 흐릿하게 섞이지 않게 함.
+  // (페이지가 바뀔 때 <html> 속성이 새 페이지 것으로 바뀌므로 바뀐 뒤에 붙이고, 전환이 끝나면 뗌)
+  type PrepEvent = Event & { from: URL; to: URL };
+  type SwapEvent = Event & { viewTransition?: ViewTransition };
+  let dir = '';
+  let vt: ViewTransition | undefined;
+  document.addEventListener('astro:before-preparation', (e) => {
+    const { from, to } = e as PrepEvent;
+    const fromHome = from.pathname === '/';
+    const toHome = to.pathname === '/';
+    dir = toHome && !fromHome ? 'to-home' : fromHome && !toHome ? 'from-home' : '';
+  });
+  document.addEventListener('astro:before-swap', (e) => {
+    vt = (e as SwapEvent).viewTransition;
+  });
+  document.addEventListener('astro:after-swap', () => {
+    if (!dir) return;
+    const html = document.documentElement;
+    const cls = dir;
+    html.classList.add(cls);
+    const done = () => html.classList.remove(cls);
+    if (vt) vt.finished.finally(done);
+    else setTimeout(done, 1000);
+  });
+</script>
 
 <style>
   .site-header {

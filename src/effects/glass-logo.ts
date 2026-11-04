@@ -123,7 +123,9 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },
   });
-  const screen = surface(gpu, canvas, { dpr: [1, 1.75], alphaMode: 'premultiplied' });
+  // 휴대폰·태블릿(터치)은 화면 밀도를 조금 낮춰 GPU 부담을 줄임
+  const maxDpr = matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
+  const screen = surface(gpu, canvas, { dpr: [1, maxDpr], alphaMode: 'premultiplied' });
   await glass.compile(screen).catch(() => {}); // 미리 준비해 두어 첫 등장 때 끊기지 않게
 
   let dead = false;

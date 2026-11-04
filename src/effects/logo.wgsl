@@ -276,15 +276,19 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
   let p = uv * params.res;
   let px = max(fwidth(p.x), 1e-3); // 화면 픽셀 1개 = CSS px
-  let first = shadeAt(p, px);
-  var col = first.col;
-  if (first.edge && AA_SAMPLES > 0 && params.aa > 0.5) {
-    var offs = array<vec2f, 4>(vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
-    var acc = vec4f(0.0);
-    for (var i = 0; i < 4; i++) {
-      acc += shadeAt(p + offs[i] * px, px).col;
-    }
-    col = (acc + first.col) / 5.0;
+  // 가운데 1점 + (모서리면) 4점. shadeAt 을 한 곳에서만 불러야 셰이더가 작게 컴파일됨
+  // (여러 곳에서 부르면 무거운 계산이 통째로 여러 벌 복사돼, 휴대폰 GPU 드라이버가 컴파일하다 멈출 수 있음)
+  var offs = array<vec2f, 5>(vec2f(0.0), vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
+  let aaOn = AA_SAMPLES > 0 && params.aa > 0.5;
+  var acc = vec4f(0.0);
+  var count = 0.0;
+  var edge = false;
+  for (var i = 0; i < 5; i++) {
+    if (i > 0 && !(edge && aaOn)) { break; }
+    let s = shadeAt(p + offs[i] * px, px);
+    if (i == 0) { edge = s.edge; }
+    acc += s.col;
+    count += 1.0;
   }
-  return col; // 미리 알파를 곱한 색 — 캔버스는 premultiplied 모드
+  return acc / count; // 미리 알파를 곱한 색 — 캔버스는 premultiplied 모드
 }

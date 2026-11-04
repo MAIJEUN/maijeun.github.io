@@ -185,12 +185,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       if (homeLogo()) ensureGlass().then((g) => g && showGlassAtHome());
       // 다른 페이지에 있으면 홈으로 갈 때 다시 만듦
     };
-    // 화면이 보일 때 다시 시도 (백그라운드에서는 GPU 를 다시 못 받을 수 있음)
-    if (document.visibilityState === 'visible') setTimeout(go, 300);
+    // 화면이 보일 때, 실패할수록 조금 더 기다렸다가 다시 시도 (백그라운드에서는 GPU 를 다시 못 받을 수 있음)
+    const wait = 700 * revives;
+    if (document.visibilityState === 'visible') setTimeout(go, wait);
     else document.addEventListener('visibilitychange', function once() {
       if (document.visibilityState !== 'visible') return;
       document.removeEventListener('visibilitychange', once);
-      setTimeout(go, 300);
+      setTimeout(go, wait);
     });
   };
   const ensureGlass = () => {
@@ -222,7 +223,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       .catch((err) => {
         // WebGPU 장치를 못 얻으면 평면 SVG 로고만 씀
         setStatus(`error — ${err?.message ?? err}`);
-        glassReady = null; // 다음에 홈에 올 때 다시 시도
+        glassReady = null;
+        revive(); // 잠시 뒤 다시 시도 (GPU 가 막 재시작된 직후에는 잠깐 못 받는 경우가 있음)
         return null;
       });
     return glassReady;

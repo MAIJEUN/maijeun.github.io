@@ -132,7 +132,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   // 메뉴 하나하나가 실제 크기(히트박스)를 가진 물체: 처음엔 '버튼이 없을 때 자리'(버튼 폭만큼 오른쪽)에 가만히 있다가,
   // 날아온 버튼의 왼쪽 끝이 SNS 의 오른쪽 끝에 닿는 순간 튕겨 나가고, SNS 가 Projects 에, Projects 가 Blog 에
   // 부딪히며 운동량을 넘겨줌 (뉴턴의 요람처럼 끝에 있는 것이 가장 멀리 날아감). 무거운 정도는 폭에 비례.
-  // 미끄러지는 동안은 마찰이 약해 멀리 가고, 멈춘 뒤에는 강한 용수철이 제자리로 튕기듯 끌어와 몇 번 출렁이다 멈춤.
+  // 미끄러지며 마찰로 느려지다 멈추면, 강한 용수철이 제자리로 빠르게 끌어오되 지나치거나 떨리지 않고 딱 멈춤.
   const FLY_MS = 520; // global.css 의 animation-duration 과 같게
   const cubicBezier = (x1: number, y1: number, x2: number, y2: number) => {
     const bx = (t: number) => 3 * x1 * t * (1 - t) ** 2 + 3 * x2 * t * t * (1 - t) + t ** 3;
@@ -170,10 +170,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
     // 메뉴마다 움직이는 빠르기가 다름: 버튼에 가까울수록 조금 빠르고(1.15배), 멀수록 느리고 오래 걸림(0.65배)
     const pace = links.map((_, i) => (n === 1 ? 1 : 1.15 - (0.5 * (n - 1 - i)) / (n - 1)));
-    const K = 60; // 밀려 나가는 동안 제자리로 끌어당기는 힘 (작을수록 멀리)
-    const SLIDE = 2 * 0.25 * Math.sqrt(K); // 밀려 나갈 때 마찰 (작을수록 멀리)
+    const K = 90; // 밀려 나가는 동안 제자리로 끌어당기는 힘 (작을수록 멀리)
+    const SLIDE = 2 * 0.45 * Math.sqrt(K); // 밀려 나갈 때 마찰 (작을수록 멀리)
     const K_BACK = 300; // 돌아올 때 용수철 세기 (클수록 빠르게 튕겨 돌아옴)
-    const DAMP_BACK = 2 * 0.4 * Math.sqrt(K_BACK); // 돌아올 때 감쇠 (작을수록 제자리를 지나쳐 더 출렁임)
+    const DAMP_BACK = 2 * Math.sqrt(K_BACK); // 돌아올 때 감쇠: 임계 감쇠라 제자리를 지나치거나 떨리지 않고 가장 빨리 멈춤
     const BOUNCE = 0.95; // 부딪힐 때 튕기는 정도 (1 = 완전 탄성)
     const SOFT = 30; // 이보다 느리게 닿으면 튕기지 않고 그냥 맞붙음 (떨림 방지, px/s)
     const H = 0.002; // 2ms 단위로 계산

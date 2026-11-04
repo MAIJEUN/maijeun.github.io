@@ -215,26 +215,33 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       }
     };
 
+    // 움직임은 처음부터 끝까지 미리 계산해 두고(버튼 경로가 정해져 있으니 결과도 정해짐), 브라우저 애니메이션으로 재생함.
+    // → 버튼 비행과 같은 시계로 돌고, 유리 로고 렌더링 등으로 스크립트가 잠깐 막혀도 메뉴가 멈춘 채 어긋나 있지 않음.
+    const STEP = 10; // 키프레임 간격 (ms)
+    const frames: number[][] = [x.slice()];
+    let sim = 0;
+    while (sim < 4000) {
+      for (let k = 0; k < STEP / (H * 1000); k++) tick((sim += H * 1000));
+      frames.push(x.slice());
+      if (sim > FLY_MS && x.every((q) => Math.abs(q) < 0.1) && v.every((q) => Math.abs(q) < 2)) break;
+    }
+    frames[frames.length - 1] = links.map(() => 0); // 마지막은 정확히 제자리 (4초 안에 안 멈춰도 제자리로)
+    const duration = (frames.length - 1) * STEP;
+
     start.then(() => {
-      const t0 = performance.now();
-      let sim = 0; // 계산이 진행된 시간 (ms)
-      const step = (now: number) => {
-        if (id !== pushAnim) return;
-        const t = Math.min(now - t0, 4000); // 버튼 전환과 같은 시계로 (계산이 가벼워 몰아서 해도 됨)
-        while (sim + H * 1000 <= t) {
-          sim += H * 1000;
-          tick(sim);
-        }
-        links.forEach((el, i) => set(el, x[i]));
-        const settled = sim > FLY_MS && x.every((q) => Math.abs(q) < 0.1) && v.every((q) => Math.abs(q) < 2);
-        if (settled || sim >= 4000) {
-          // 다 멈췄거나, 혹시 4초 안에 멈추지 않으면 제자리로 되돌리고 끝냄 (어긋난 채 남지 않게)
-          links.forEach((el) => set(el, 0));
-          return;
-        }
-        requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
+      if (id !== pushAnim) return;
+      // 버튼 비행 애니메이션과 시작 시각을 맞춤
+      const fly = document
+        .getAnimations()
+        .find((an) => (an.effect as KeyframeEffect | null)?.pseudoElement === '::view-transition-group(theme-toggle)');
+      links.forEach((el, i) => {
+        const anim = el.animate(
+          frames.map((f) => ({ transform: `translateX(${f[i].toFixed(2)}px)` })),
+          { duration, easing: 'linear' },
+        );
+        if (fly?.startTime != null) anim.startTime = fly.startTime;
+        set(el, 0); // 재생 중에는 애니메이션 값이 쓰이고, 끝나면 제자리
+      });
     });
   };
 

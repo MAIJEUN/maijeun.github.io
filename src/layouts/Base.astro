@@ -95,7 +95,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   const showGlassAtHome = (from?: Rect) => {
     const logo = homeLogo();
     if (!glass?.alive || !logo) return;
-    glass.enterHome(() => rectOf(homeLogo() ?? logo), { from, ms: from ? 700 : 750 });
+    glass.enterHome(() => rectOf(homeLogo() ?? logo), { from, ms: from ? 480 : 750 });
     // 첫 프레임은 평면 SVG 로고와 같은 모습이라 바로 바꿔도 티가 나지 않음
     requestAnimationFrame(() => requestAnimationFrame(() => glass?.alive && html.classList.add('glass-on')));
   };
@@ -166,7 +166,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         if (!mark) return;
         mark.style.viewTransitionName = 'none';
         mark.style.visibility = 'hidden';
-        glass.leave(rectOf(mark), 650).then(() => {
+        glass.leave(rectOf(mark), 420).then(() => {
           mark.style.visibility = '';
           if (!glass?.atHome) html.classList.remove('glass-on');
         });

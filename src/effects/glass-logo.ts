@@ -83,6 +83,8 @@ export type GlassLogo = {
 };
 
 const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+// 날아갈 때: 빠르게 출발해서 부드럽게 멈춤 (예전 평면 로고 전환과 같은 느낌)
+const easeOut = (x: number) => 1 - Math.pow(1 - x, 4);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -145,7 +147,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
   let mode: Mode = 'idle';
   let getHomeRect: () => Rect = () => ({ x: 0, y: 0, w: 1 });
   // 움직임 (자리·평면 정도·배경) 한 번에
-  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; t0: number; dur: number; done?: () => void };
+  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; t0: number; dur: number; ease: (x: number) => number; done?: () => void };
   let tween: Tween | undefined;
   let rect: Rect = { x: 0, y: 0, w: 1 };
   let m = 1; // 1 = 평면 단색, 0 = 유리
@@ -174,8 +176,9 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       // 자리·평면 정도·배경: 움직이는 중이면 그 사이 값, 아니면 홈 자리
       let e = 1;
       if (tween) {
+        if (tween.t0 < 0) tween.t0 = now; // 첫 프레임부터 시간을 셈 (페이지가 바뀌는 순간의 끊김 때문에 앞부분이 건너뛰지 않게)
         const k = Math.min(1, Math.max(0, (now - tween.t0) / tween.dur));
-        e = easeInOut(k);
+        e = tween.ease(k);
         const to = tween.to();
         rect = { x: lerp(tween.from.x, to.x, e), y: lerp(tween.from.y, to.y, e), w: lerp(tween.from.w, to.w, e) };
         m = lerp(tween.m0, tween.m1, e);
@@ -238,7 +241,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       });
       frame.pass(screen, glass);
 
-      if (tween && now - tween.t0 >= tween.dur) {
+      if (tween && tween.t0 >= 0 && now - tween.t0 >= tween.dur) {
         const done = tween.done;
         tween = undefined;
         done?.();
@@ -258,7 +261,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       getHomeRect = getRect;
       const start = opts.from ?? getRect();
       // 처음 접속: 평면에서 유리로 (배경은 처음부터). 다른 페이지에서 옴: 배경도 같이 차오름
-      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, t0: performance.now(), dur: opts.ms ?? 750 };
+      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, t0: -1, dur: opts.ms ?? 750, ease: opts.from ? easeOut : easeInOut };
       tilt.x = tilt.y = tilt.vx = tilt.vy = 0;
       light.x = start.x - 200;
       light.y = start.y - 200;
@@ -277,10 +280,10 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       mode = 'hold';
       startLoop();
     },
-    leave(to, ms = 600) {
+    leave(to, ms = 420) {
       if (dead) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, t0: performance.now(), dur: ms };
+        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, t0: -1, dur: ms, ease: easeOut };
         mode = 'leave';
         startLoop();
         tween.done = () => {

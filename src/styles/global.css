@@ -99,3 +99,20 @@ html.to-home::view-transition-old(site-logo) { display: none !important; }
 html.to-home::view-transition-new(site-logo) { animation: none !important; opacity: 1 !important; }
 html.from-home::view-transition-new(site-logo) { display: none !important; }
 html.from-home::view-transition-old(site-logo) { animation: none !important; opacity: 1 !important; }
+
+/* 홈의 유리 로고 캔버스 (Base.astro 에 하나, 페이지가 바뀌어도 유지) */
+.glass-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  view-transition-name: glass-canvas;
+}
+html.glass-on .glass-canvas { opacity: 1; }
+html.glass-on .home .logo { opacity: 0; }
+/* 페이지 전환 중에도 캔버스는 캡처 이미지 대신 실시간으로 계속 보이게 */
+::view-transition-old(glass-canvas) { display: none; }
+::view-transition-group(glass-canvas),
+::view-transition-new(glass-canvas) { animation: none; }

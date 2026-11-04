@@ -17,6 +17,7 @@ struct Params {
   intro: f32,      // 0 → 1 : 등장
   solid: f32,      // 1 = 평면 단색 로고(SVG와 똑같이), 0 = 유리. 페이지 전환 때 이어지게
   thick: f32,      // 두께 비율 0 → 1 (0이면 종이처럼 얇음)
+  bgA: f32,        // 배경(바닥·점 격자·그림자) 불투명도. 1 = 홈 화면, 0 = 로고만 (다른 페이지 위를 날아갈 때)
   fg: vec4f,
   bg: vec4f,
 }
@@ -151,7 +152,7 @@ fn sceneRay(o: vec3f, d: vec3f, soft: f32) -> vec3f {
   return env(d);
 }
 
-struct Sample { col: vec3f, edge: bool }
+struct Sample { col: vec4f, edge: bool } // col: 미리 알파를 곱한 색 (premultiplied)
 
 // 화면 한 점(p, CSS px)의 색. edge = 모서리 근처라서 더 촘촘히 샘플링할 필요가 있음
 fn shadeAt(p: vec2f, px: f32) -> Sample {
@@ -191,6 +192,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   }
 
   var col = base;
+  var cov = 0.0; // 로고가 덮은 정도
   // 바깥 윤곽선 근처 (스치듯 지나간 광선)
   var edge = tn < tf && !hit && minD < 2.5 * px;
   let cover = select(1.0 - smoothstep(0.0, px, minD), 1.0, hit);
@@ -261,8 +263,12 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     // solid = 1 이면 SVG 로고와 똑같은 단색 → 0 으로 가며 유리로
     let look = mix(clamp(glass, vec3f(0.0), vec3f(1.0)), params.fg.rgb, params.solid);
     col = mix(base, look, cover * smoothstep(0.0, 1.0, params.intro));
+    cov = cover * smoothstep(0.0, 1.0, params.intro);
   }
-  return Sample(col, edge);
+  // 배경은 bgA 만큼만 그림 (0 이면 로고만 보이고 뒤 페이지가 비침)
+  let alpha = params.bgA * (1.0 - cov) + cov;
+  let logoPart = col - base * (1.0 - cov); // = look * cov
+  return Sample(vec4f(base * params.bgA * (1.0 - cov) + logoPart, alpha), edge);
 }
 
 // 안티앨리어싱: 모서리 근처 픽셀만 한 픽셀 안을 4점 더 (회전 격자) 샘플링해 평균
@@ -273,11 +279,11 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   var col = first.col;
   if (first.edge && AA_SAMPLES > 0) {
     var offs = array<vec2f, 4>(vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
-    var acc = vec3f(0.0);
+    var acc = vec4f(0.0);
     for (var i = 0; i < 4; i++) {
       acc += shadeAt(p + offs[i] * px, px).col;
     }
     col = (acc + first.col) / 5.0;
   }
-  return vec4f(col, 1.0);
+  return col; // 미리 알파를 곱한 색 — 캔버스는 premultiplied 모드
 }

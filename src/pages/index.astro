@@ -16,75 +16,8 @@ import { SITE } from '../data/site';
       </nav>
     </div>
   </main>
-  <canvas class="glass" aria-hidden="true"></canvas>
 </Base>
 
-<script>
-  import { mountGlassLogo, type GlassLogo } from '../effects/glass-logo';
-
-  // 페이지 전환(ClientRouter)을 쓰기 때문에 이 스크립트는 한 번만 실행됩니다.
-  // 메인에 올 때마다 유리 로고를 붙이고, 떠날 때 정리합니다.
-  let ctl: GlassLogo | undefined;
-  let generation = 0;
-  let pendingTransition: ViewTransition | undefined;
-  const html = document.documentElement;
-  const logoWrap = () => document.querySelector<HTMLElement>('.home .logo-wrap');
-
-  document.addEventListener('astro:page-load', async () => {
-    const canvas = document.querySelector<HTMLCanvasElement>('canvas.glass');
-    const logo = document.querySelector('.home .logo');
-    if (!canvas || !logo) return;
-    const my = ++generation;
-    // 다른 페이지에서 왔다면 로고가 날아오는 전환이 끝난 뒤에 유리로 바꿈
-    // (전환 도중에 유리 로고가 먼저 그려져 있으면 그 위로 겹쳐 보여 어색함)
-    const vt = pendingTransition;
-    pendingTransition = undefined;
-    if (vt) await vt.finished.catch(() => {});
-    if (my !== generation) return;
-    try {
-      const c = await mountGlassLogo(canvas, logo);
-      if (!c) return;
-      if (my !== generation || !canvas.isConnected) return c.dispose(); // 그새 다른 페이지로 이동함
-      ctl = c;
-    } catch (err) {
-      // WebGPU를 못 쓰는 환경이면 그냥 SVG 로고가 보입니다.
-      console.warn('[glass-logo]', err);
-      html.classList.remove('glass-on');
-    }
-  });
-
-  // 메인을 떠날 때: 먼저 유리 로고가 지금 기울기 그대로 얇은 단색 로고로 돌아가고 (다음 페이지를 불러오는 동안),
-  document.addEventListener('astro:before-preparation', (e) => {
-    const c = ctl;
-    if (!c) return;
-    const ev = e as Event & { loader: () => Promise<void> };
-    const load = ev.loader;
-    ev.loader = async () => {
-      await Promise.all([c.toSolid(300), load()]);
-    };
-  });
-  // 화면을 캡처하기 직전: 같은 기울기를 평면 SVG 로고에 CSS 3D 회전으로 옮겨 놓음.
-  // 그러면 헤더 로고로 날아가는 동안 회전이 풀리며 평면이 됨.
-  document.addEventListener('astro:after-preparation', () => {
-    if (!ctl) return;
-    const { yaw, pitch, perspective } = ctl.pose();
-    const wrap = logoWrap();
-    if (wrap) wrap.style.transform = `perspective(${perspective}px) rotateY(${-yaw}rad) rotateX(${-pitch}rad)`;
-    html.classList.add('glass-snap');
-    html.classList.remove('glass-on');
-  });
-  document.addEventListener('astro:before-swap', (e) => {
-    pendingTransition = (e as Event & { viewTransition?: ViewTransition }).viewTransition;
-    generation++;
-    ctl?.dispose();
-    ctl = undefined;
-  });
-  document.addEventListener('astro:after-swap', () => {
-    html.classList.remove('glass-snap');
-    // 다른 페이지에서 돌아온 경우: 링크를 기다리지 않고 바로 보여줌
-    if (document.querySelector('main.home')) html.classList.add('returning');
-  });
-</script>
 
 <style>
   .home {
@@ -127,16 +60,6 @@ import { SITE } from '../data/site';
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .home-links { animation: none; } }
 
-  .glass {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    pointer-events: none;
-  }
-  :global(html.glass-on) .glass { opacity: 1; }
-  :global(html.glass-on) .home :global(.logo) { opacity: 0; }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

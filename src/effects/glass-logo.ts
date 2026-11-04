@@ -4,8 +4,6 @@ import logoShader from './logo.wgsl';
 import { buildLogoSdf, LOGO_FILL, SDF_RANGE, SDF_SIZE } from './logo-sdf';
 import { INITIAL_PARAMS } from './glass-params';
 
-const ON_CLASS = 'glass-on';
-
 function cssColor(name: string): [number, number, number, number] {
   const probe = document.createElement('span');
   probe.style.color = `var(${name})`;
@@ -63,16 +61,42 @@ if (typeof window !== 'undefined') {
   });
 }
 
-let sdfCache: Uint8Array | undefined; // 로고 거리장은 한 번만 계산
 
-// GPU 장치·로고 텍스처·셰이더는 페이지를 오가도 켜 둔 채로 다시 씀.
-// 홈으로 돌아올 때 새로 켜느라 평면 로고가 오래 보이지 않도록.
-type Shared = { gpu: Gpu; glass: Effect; dead: boolean };
-let shared: Shared | undefined;
+/** 화면 위 로고 자리: 중심(x, y)과 로고 한 변 길이(w), 모두 CSS px */
+export type Rect = { x: number; y: number; w: number };
 
-async function getShared(): Promise<Shared> {
-  if (shared && !shared.dead) return shared;
-  const gpu = await init();
+export type GlassLogo = {
+  /**
+   * 홈 화면 모드. getRect 로 로고 자리를 계속 따라감.
+   * from 이 있으면 그 자리(헤더 로고)의 평면 로고에서 출발해 날아오면서 동시에 커지고 유리가 됨.
+   * 없으면 그 자리에서 평면 → 유리로만 바뀜 (처음 접속).
+   */
+  enterHome(getRect: () => Rect, opts?: { from?: Rect; ms?: number }): void;
+  /** 다른 페이지로 갈 때 쓰는 출발 자세: 지정한 자리에 평면 단색 로고만 그려 둠 (배경 없음) */
+  holdAt(rect: Rect): void;
+  /** 지금 모습에서 to 자리로 날아가면서 동시에 작아지고, 회전이 풀리고, 평면 단색이 됨. 끝나면 쉼 */
+  leave(to: Rect, ms?: number): Promise<void>;
+  /** 홈 화면 모드인지 (날아가는 중이거나 쉬는 중이 아니라) */
+  readonly atHome: boolean;
+  /** GPU 오류 없이 쓸 수 있는 상태인지 */
+  readonly alive: boolean;
+};
+
+const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+let sdfCache: Uint8Array<ArrayBuffer> | undefined; // 로고 거리장은 한 번만 계산
+
+/**
+ * 페이지를 오가도 유지되는 캔버스(transition:persist)에 유리 로고를 그리는 렌더러를 만듭니다.
+ * WebGPU를 못 쓰거나 '동작 줄이기' 설정이면 null — 그때는 평면 SVG 로고만 씀.
+ */
+export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassLogo | null> {
+  if (!('gpu' in navigator)) return null;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+
+  const gpu: Gpu = await init();
   const n = SDF_SIZE;
   const sdf = texture(gpu, {
     kind: '2d',
@@ -83,7 +107,7 @@ async function getShared(): Promise<Shared> {
   });
   sdfCache ??= buildLogoSdf();
   gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, sdfCache, { bytesPerRow: n * 4 }, [n, n]);
-  const glass = effect(gpu, logoShader, {
+  const glass: Effect = effect(gpu, logoShader, {
     label: 'glass-logo',
     set: {
       params: { ...INITIAL_PARAMS },
@@ -91,189 +115,180 @@ async function getShared(): Promise<Shared> {
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },
   });
-  const s: Shared = { gpu, glass, dead: false };
-  gpu.lost.then(() => {
-    s.dead = true;
-    if (shared === s) shared = undefined;
-  });
-  shared = s;
-  return s;
-}
+  const screen = surface(gpu, canvas, { dpr: [1, 1.75], alphaMode: 'premultiplied' });
+  await glass.compile(screen).catch(() => {}); // 미리 준비해 두어 첫 등장 때 끊기지 않게
 
-const PERSPECTIVE = 4; // 셰이더(logo.wgsl)의 PERSPECTIVE 와 같아야 함 — CSS 3D 회전을 유리 로고와 똑같이 맞추는 데 씀
-const MORPH_IN_MS = 750; // 평면 로고 → 유리 로고
-
-export type GlassLogo = {
-  /** 정리 (페이지를 떠날 때) */
-  dispose(): void;
-  /** 지금 기울기 그대로 얇은 단색(평면) 로고로 돌아감. 페이지를 떠나기 직전에 호출 */
-  toSolid(ms?: number): Promise<void>;
-  /** 지금 로고의 기울기와 원근 — 평면 SVG 로고에 CSS 3D 회전으로 그대로 옮길 때 씀 */
-  pose(): { yaw: number; pitch: number; perspective: number };
-};
-
-const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
-const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-
-/**
- * 원래 SVG 로고(placeholder) 자리에 WebGPU 유리 블럭 로고를 그립니다.
- * 첫 프레임은 SVG와 똑같은 평면 단색 로고이고, 거기서 두께가 생기며 유리로 바뀝니다.
- * WebGPU를 못 쓰거나 '동작 줄이기' 설정이면 false를 반환하고 SVG가 그대로 남습니다.
- */
-export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Element): Promise<GlassLogo | false> {
-  if (!('gpu' in navigator)) return false;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
-
-  const sh = await getShared();
-  const { gpu, glass } = sh;
-  const ac = new AbortController();
-  const { signal } = ac;
-  let loop: { stop(): void } | undefined;
-  let unsubResize: (() => void) | undefined;
-  let disposed = false;
-
-  const screen = surface(gpu, canvas, { dpr: [1, 1.75] });
-
-  const dispose = () => {
-    if (disposed) return;
-    disposed = true;
-    ac.abort();
-    loop?.stop();
-    unsubResize?.();
-    offError();
-    screen.dispose();
-    morphDone?.();
-    document.documentElement.classList.remove(ON_CLASS);
-  };
-  // GPU 쪽에서 문제가 생기면 원래 SVG 로고로 되돌리고, 다음에는 GPU를 새로 켬
-  const fallback = (why: unknown) => {
-    if (disposed) return;
+  let dead = false;
+  const die = (why: unknown) => {
+    if (dead) return;
+    dead = true;
     console.warn('[glass-logo]', why);
-    dispose();
-    sh.dead = true;
-    if (shared === sh) shared = undefined;
-    gpu.dispose();
+    stopLoop();
+    document.documentElement.classList.remove('glass-on');
   };
-  const offError = gpu.onError(fallback);
+  gpu.onError(die);
+  gpu.lost.then(() => die('GPU device lost'));
 
-  // 레이아웃 기준값: 원래 SVG 자리를 그대로 따라감
-  let center = { x: 0, y: 0 };
-  let box = 1;
-  const layout = () => {
-    const r = placeholder.getBoundingClientRect();
-    box = r.width / LOGO_FILL;
-    center = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-    return {
-      res: [canvas.clientWidth, canvas.clientHeight],
-      center: [center.x, center.y],
-      box,
-      range: (SDF_RANGE * box) / SDF_SIZE,
-    };
-  };
   const colors = () => ({ fg: cssColor('--fg'), bg: cssColor('--bg') });
-  glass.set({ params: { ...layout(), ...colors(), ...axes(0, 0), time: 0, intro: 1, solid: 1, thick: 0 } });
+  glass.set({ params: colors() });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }));
 
-  const relayout = () => glass.set({ params: layout() });
-  unsubResize = screen.onResize(relayout);
-  addEventListener('resize', relayout, { signal });
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }), { signal });
-
-  // 클릭/탭하면 한 바퀴 회전
+  // 클릭/탭하면 한 바퀴 회전 (홈 화면에서만, 링크 클릭 제외)
   let spinTarget = 0;
-  addEventListener(
-    'click',
-    (e) => {
-      if ((e.target as Element | null)?.closest?.('a')) return; // 링크 클릭은 회전하지 않음
-      spinTarget += Math.PI * 2;
-    },
-    { signal },
-  );
+  addEventListener('click', (e) => {
+    if (mode !== 'home' || (e.target as Element | null)?.closest?.('a')) return;
+    spinTarget += Math.PI * 2;
+  });
 
+  // ── 상태 ──
+  type Mode = 'idle' | 'hold' | 'home' | 'leave';
+  let mode: Mode = 'idle';
+  let getHomeRect: () => Rect = () => ({ x: 0, y: 0, w: 1 });
+  // 움직임 (자리·평면 정도·배경) 한 번에
+  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; t0: number; dur: number; done?: () => void };
+  let tween: Tween | undefined;
+  let rect: Rect = { x: 0, y: 0, w: 1 };
+  let m = 1; // 1 = 평면 단색, 0 = 유리
+  let bgA = 0; // 배경 불투명도
+  let yaw = 0;
+  let pitch = 0;
   const tilt = spring(40); // 로고 방향
   const spin = spring(18, 0.55); // 회전 (살짝 출렁이며 멈춤)
   const light = spring(90); // 하이라이트 위치
-  light.x = center.x - 200;
-  light.y = center.y - 200;
-
-  // 평면(1) ↔ 유리(0) 사이 진행. 처음엔 평면에서 유리로.
-  let m = 1;
-  let morph = { from: 1, to: 0, t0: performance.now(), dur: MORPH_IN_MS };
-  let morphDone: (() => void) | undefined;
-  let frozen = false; // 떠나는 중: 기울기를 그대로 고정
-  let yaw = 0;
-  let pitch = 0;
 
   const time = clock(gpu);
   let last = 0;
-  let shown = false;
-  loop = frameLoop(gpu, (frame) => {
-    const t = time.time;
-    const dt = Math.min(1 / 30, Math.max(0, t - last));
-    last = t;
-    const now = performance.now();
-    const w = innerWidth, h = innerHeight;
+  let loop: { stop(): void } | undefined;
+  const stopLoop = () => {
+    loop?.stop();
+    loop = undefined;
+  };
+  const startLoop = () => {
+    if (loop || dead) return;
+    loop = frameLoop(gpu, (frame) => {
+      const t = time.time;
+      const dt = Math.min(1 / 30, Math.max(0, t - last));
+      last = t;
+      const now = performance.now();
 
-    const k = Math.min(1, Math.max(0, (now - morph.t0) / morph.dur));
-    m = morph.from + (morph.to - morph.from) * easeInOut(k);
-    if (k >= 1 && morphDone) {
-      morphDone();
-      morphDone = undefined;
-    }
-
-    if (!frozen) {
-      let tx: number, ty: number, lx: number, ly: number;
-      if (now - pointer.at < 4000) {
-        // 마우스 쪽을 바라봄
-        tx = clamp1((pointer.x - center.x) / (w * 0.5));
-        ty = clamp1((pointer.y - center.y) / (h * 0.5));
-        lx = pointer.x;
-        ly = pointer.y;
-      } else if (now - orient.at < 1000) {
-        tx = orient.x;
-        ty = orient.y;
-        lx = center.x + tx * w * 0.4;
-        ly = center.y + ty * h * 0.4;
-      } else {
-        // 입력이 없으면 천천히 혼자 흔들림
-        tx = Math.sin(t * 0.45) * 0.45;
-        ty = Math.sin(t * 0.31 + 1.3) * 0.3;
-        lx = center.x + tx * w * 0.45;
-        ly = center.y + ty * h * 0.45;
+      // 자리·평면 정도·배경: 움직이는 중이면 그 사이 값, 아니면 홈 자리
+      let e = 1;
+      if (tween) {
+        const k = Math.min(1, Math.max(0, (now - tween.t0) / tween.dur));
+        e = easeInOut(k);
+        const to = tween.to();
+        rect = { x: lerp(tween.from.x, to.x, e), y: lerp(tween.from.y, to.y, e), w: lerp(tween.from.w, to.w, e) };
+        m = lerp(tween.m0, tween.m1, e);
+        bgA = lerp(tween.b0, tween.b1, e);
+      } else if (mode === 'home') {
+        rect = getHomeRect();
       }
-      // 평면일 때는 정면, 유리가 되어 갈수록 커서 쪽으로 기울어짐
-      tilt.step(tx * (1 - m), ty * (1 - m), dt);
-      light.step(lx, ly, dt);
-      spin.step(spinTarget, 0, dt);
-      // 마우스 쪽을 바라보도록: 오른쪽이면 yaw<0, 아래쪽이면 pitch>0
-      yaw = -tilt.x * MAX_TILT + spin.x;
-      pitch = tilt.y * MAX_TILT;
-    }
 
-    // 두께는 단색이 빠지는 것보다 조금 먼저 생기게
-    const thick = Math.min(1, (1 - m) * 1.25);
-    glass.set({ params: { time: t, solid: m, thick, ...axes(yaw, pitch), light: [light.x, light.y] } });
-    frame.pass(screen, glass);
+      if (mode === 'leave') {
+        // 떠나는 중: 지금 기울기에서 정면으로 풀림
+        yaw = tween ? tween.yaw0 * (1 - e) : 0;
+        pitch = tween ? tween.pitch0 * (1 - e) : 0;
+      } else if (mode === 'home') {
+        const w = innerWidth, h = innerHeight;
+        let tx: number, ty: number, lx: number, ly: number;
+        if (now - pointer.at < 4000) {
+          // 마우스 쪽을 바라봄
+          tx = clamp1((pointer.x - rect.x) / (w * 0.5));
+          ty = clamp1((pointer.y - rect.y) / (h * 0.5));
+          lx = pointer.x;
+          ly = pointer.y;
+        } else if (now - orient.at < 1000) {
+          tx = orient.x;
+          ty = orient.y;
+          lx = rect.x + tx * w * 0.4;
+          ly = rect.y + ty * h * 0.4;
+        } else {
+          // 입력이 없으면 천천히 혼자 흔들림
+          tx = Math.sin(t * 0.45) * 0.45;
+          ty = Math.sin(t * 0.31 + 1.3) * 0.3;
+          lx = rect.x + tx * w * 0.45;
+          ly = rect.y + ty * h * 0.45;
+        }
+        // 평면일 때는 정면, 유리가 되어 갈수록 커서 쪽으로 기울어짐
+        tilt.step(tx * (1 - m), ty * (1 - m), dt);
+        light.step(lx, ly, dt);
+        spin.step(spinTarget, 0, dt);
+        // 마우스 쪽을 바라보도록: 오른쪽이면 yaw<0, 아래쪽이면 pitch>0
+        yaw = -tilt.x * MAX_TILT + spin.x;
+        pitch = tilt.y * MAX_TILT;
+      } else {
+        yaw = 0;
+        pitch = 0;
+      }
 
-    if (!shown) {
-      shown = true;
-      // 첫 프레임은 SVG와 똑같은 모습이라 바로 바꿔도 티가 나지 않음
-      requestAnimationFrame(() => !disposed && document.documentElement.classList.add(ON_CLASS));
-    }
-  });
+      const box = rect.w / LOGO_FILL;
+      glass.set({
+        params: {
+          res: [canvas.clientWidth, canvas.clientHeight],
+          center: [rect.x, rect.y],
+          box,
+          range: (SDF_RANGE * box) / SDF_SIZE,
+          time: t,
+          solid: m,
+          thick: Math.min(1, (1 - m) * 1.25), // 두께는 단색이 빠지는 것보다 조금 먼저 생기게
+          bgA,
+          ...axes(yaw, pitch),
+          light: [light.x, light.y],
+        },
+      });
+      frame.pass(screen, glass);
 
-  gpu.lost.then(() => fallback('GPU device lost'));
+      if (tween && now - tween.t0 >= tween.dur) {
+        const done = tween.done;
+        tween = undefined;
+        done?.();
+      }
+    });
+  };
 
   return {
-    dispose,
-    toSolid(ms = 300) {
-      if (disposed) return Promise.resolve();
-      frozen = true;
-      morph = { from: m, to: 1, t0: performance.now(), dur: ms };
+    get atHome() {
+      return mode === 'home' && !dead;
+    },
+    get alive() {
+      return !dead;
+    },
+    enterHome(getRect, opts = {}) {
+      if (dead) return;
+      getHomeRect = getRect;
+      const start = opts.from ?? getRect();
+      // 처음 접속: 평면에서 유리로 (배경은 처음부터). 다른 페이지에서 옴: 배경도 같이 차오름
+      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, t0: performance.now(), dur: opts.ms ?? 750 };
+      tilt.x = tilt.y = tilt.vx = tilt.vy = 0;
+      light.x = start.x - 200;
+      light.y = start.y - 200;
+      rect = start;
+      m = 1;
+      bgA = tween.b0;
+      mode = 'home';
+      startLoop();
+    },
+    holdAt(r) {
+      if (dead) return;
+      tween = undefined;
+      rect = r;
+      m = 1;
+      bgA = 0;
+      mode = 'hold';
+      startLoop();
+    },
+    leave(to, ms = 600) {
+      if (dead) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        morphDone = resolve;
-        setTimeout(resolve, ms + 150); // 혹시 프레임이 멈춰도 기다리지 않도록
+        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, t0: performance.now(), dur: ms };
+        mode = 'leave';
+        startLoop();
+        tween.done = () => {
+          mode = 'idle';
+          stopLoop();
+          resolve();
+        };
       });
     },
-    pose: () => ({ yaw: wrapAngle(yaw), pitch, perspective: box * PERSPECTIVE }),
   };
 }

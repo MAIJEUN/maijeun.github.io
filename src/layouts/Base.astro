@@ -53,34 +53,145 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       </span>
     </footer>
     )}
+    <!-- 홈의 유리 로고를 그리는 캔버스. 페이지가 바뀌어도 그대로 남아서 로고가 날아가는 동안에도 계속 그림 -->
+    <canvas class="glass-canvas" transition:persist="glass-canvas" aria-hidden="true"></canvas>
   </body>
 </html>
 
 <script>
-  // 로고 전환 방향 표시: 홈으로 갈 때(to-home) / 홈에서 나갈 때(from-home).
-  // CSS(global.css)가 이걸 보고 큰 쪽의 선명한 로고 이미지만 써서 흐릿하게 섞이지 않게 함.
-  // (페이지가 바뀔 때 <html> 속성이 새 페이지 것으로 바뀌므로 바뀐 뒤에 붙이고, 전환이 끝나면 뗌)
+  // 로고 연출 (모든 페이지 공통, 페이지를 오가도 한 번만 실행됨)
+  // - 홈의 유리 로고는 페이지가 바뀌어도 남는 캔버스(.glass-canvas)에 그림.
+  // - 홈 ↔ 다른 페이지로 갈 때: 유리 로고가 날아가며 동시에 크기·유리↔평면·회전이 바뀜.
+  // - WebGPU가 없거나 아직 준비가 안 됐으면: 평면 SVG 로고가 페이지 전환으로 날아감 (to-home / from-home 표시로
+  //   global.css 가 큰 쪽의 선명한 이미지만 쓰게 함).
+  import type { GlassLogo, Rect } from '../effects/glass-logo';
+
   type PrepEvent = Event & { from: URL; to: URL };
   type SwapEvent = Event & { viewTransition?: ViewTransition };
-  let dir = '';
+
+  const html = document.documentElement;
+  const isHome = (u: URL) => u.pathname === '/';
+  const canvasEl = () => document.querySelector<HTMLCanvasElement>('canvas.glass-canvas');
+  const homeLogo = () => document.querySelector<HTMLElement>('.home .logo');
+  const headerMark = () => document.querySelector<HTMLElement>('.top .mark');
+  const rectOf = (el: Element): Rect => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width };
+  };
+
+  // 유리 로고 렌더러는 필요할 때 한 번만 만듦 (WebGPU 코드는 이때 따로 불러옴)
+  let glass: GlassLogo | null = null;
+  let glassReady: Promise<GlassLogo | null> | null = null;
+  const ensureGlass = () => {
+    const canvas = canvasEl();
+    if (!canvas || !('gpu' in navigator) || matchMedia('(prefers-reduced-motion: reduce)').matches) return Promise.resolve(null);
+    glassReady ??= import('../effects/glass-logo')
+      .then((m) => m.createGlassLogo(canvas))
+      .then((g) => (glass = g))
+      .catch(() => null); // WebGPU 장치를 못 얻으면 평면 SVG 로고만 씀
+    return glassReady;
+  };
+
+  const showGlassAtHome = (from?: Rect) => {
+    const logo = homeLogo();
+    if (!glass?.alive || !logo) return;
+    glass.enterHome(() => rectOf(homeLogo() ?? logo), { from, ms: from ? 700 : 750 });
+    // 첫 프레임은 평면 SVG 로고와 같은 모습이라 바로 바꿔도 티가 나지 않음
+    requestAnimationFrame(() => requestAnimationFrame(() => glass?.alive && html.classList.add('glass-on')));
+  };
+
+  // 처음 접속
+  let first = true;
+  document.addEventListener('astro:page-load', async () => {
+    if (!first) return;
+    first = false;
+    if (homeLogo()) {
+      if (await ensureGlass()) showGlassAtHome();
+    } else {
+      // 다른 페이지로 처음 들어왔으면 한가할 때 미리 준비 (홈으로 갈 때 바로 쓰도록)
+      ('requestIdleCallback' in window ? requestIdleCallback : setTimeout)(() => ensureGlass());
+    }
+  });
+
+  // 페이지 이동
+  let nav: { fromHome: boolean; toHome: boolean; glass: boolean; fromRect?: Rect } | null = null;
   let vt: ViewTransition | undefined;
+
   document.addEventListener('astro:before-preparation', (e) => {
     const { from, to } = e as PrepEvent;
-    const fromHome = from.pathname === '/';
-    const toHome = to.pathname === '/';
-    dir = toHome && !fromHome ? 'to-home' : fromHome && !toHome ? 'from-home' : '';
+    const fromHome = isHome(from);
+    const toHome = isHome(to);
+    const crossing = fromHome !== toHome;
+    // 유리 로고로 날릴 수 있는지: 나갈 땐 홈에 유리 로고가 떠 있어야, 올 땐 렌더러가 준비돼 있어야
+    const useGlass = crossing && !!glass?.alive && (fromHome ? glass.atHome : true);
+    nav = { fromHome, toHome, glass: useGlass };
   });
+
+  // 화면을 캡처하기 직전 (아직 이전 페이지)
+  document.addEventListener('astro:after-preparation', () => {
+    if (!nav?.glass || !glass) return;
+    if (nav.fromHome) {
+      // 홈 로고는 페이지 전환으로 날리지 않음 (유리 로고가 대신 날아감)
+      const wrap = document.querySelector<HTMLElement>('.home .logo-wrap');
+      if (wrap) wrap.style.viewTransitionName = 'none';
+    } else {
+      // 헤더 로고 자리에 똑같은 평면 로고를 캔버스에 그려 두고, 진짜 헤더 로고는 숨김
+      const mark = headerMark();
+      if (mark) {
+        nav.fromRect = rectOf(mark);
+        mark.style.viewTransitionName = 'none';
+        mark.style.visibility = 'hidden';
+        glass.holdAt(nav.fromRect);
+        html.classList.add('glass-on');
+      }
+    }
+  });
+
   document.addEventListener('astro:before-swap', (e) => {
     vt = (e as SwapEvent).viewTransition;
   });
+
+  // 새 페이지로 바뀐 직후 (전환 애니메이션 시작 전)
   document.addEventListener('astro:after-swap', () => {
-    if (!dir) return;
-    const html = document.documentElement;
-    const cls = dir;
-    html.classList.add(cls);
-    const done = () => html.classList.remove(cls);
-    if (vt) vt.finished.finally(done);
-    else setTimeout(done, 1000);
+    // 다른 페이지에서 홈으로 돌아온 경우: 로고 아래 링크를 기다리지 않고 바로 보여줌
+    if (homeLogo()) html.classList.add('returning');
+    const n = nav;
+    nav = null;
+    if (!n) return;
+    if (n.glass && glass) {
+      html.classList.add('glass-on'); // 새 페이지로 바뀌며 <html> 속성이 초기화되므로 다시
+      if (n.fromHome) {
+        // 홈 → 다른 페이지: 헤더 로고 자리로 날아가며 작아지고 평면이 됨. 도착하면 진짜 헤더 로고로 바꿈
+        const mark = headerMark();
+        if (!mark) return;
+        mark.style.viewTransitionName = 'none';
+        mark.style.visibility = 'hidden';
+        glass.leave(rectOf(mark), 650).then(() => {
+          mark.style.visibility = '';
+          if (!glass?.atHome) html.classList.remove('glass-on');
+        });
+      } else {
+        // 다른 페이지 → 홈: 헤더 로고 자리에서 날아오며 커지고 유리가 됨
+        const wrap = document.querySelector<HTMLElement>('.home .logo-wrap');
+        if (wrap) wrap.style.viewTransitionName = 'none';
+        showGlassAtHome(n.fromRect);
+      }
+      return;
+    }
+    // 유리 로고 없이: 평면 SVG 로고를 페이지 전환으로 날림
+    const cls = n.toHome && !n.fromHome ? 'to-home' : n.fromHome && !n.toHome ? 'from-home' : '';
+    if (cls) {
+      html.classList.add(cls);
+      const done = () => html.classList.remove(cls);
+      if (vt) vt.finished.finally(done);
+      else setTimeout(done, 1000);
+    }
+    // 렌더러가 아직 없으면 지금 준비해 두고, 홈에 왔다면 전환이 끝난 뒤 유리로 바꿈
+    ensureGlass().then(async (g) => {
+      if (!g || !n.toHome || !homeLogo()) return;
+      await vt?.finished.catch(() => {});
+      if (homeLogo()) showGlassAtHome();
+    });
   });
 </script>
 

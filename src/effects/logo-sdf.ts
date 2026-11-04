@@ -50,7 +50,7 @@ function edt2d(grid: Float64Array, n: number): Float64Array {
  * 로고 path → 부호 있는 거리장.
  * 값 0..1 (0.5 = 경계, 작을수록 안쪽)을 16비트로 r(상위)·g(하위) 두 채널에 나눠 저장합니다.
  */
-export function buildLogoSdf(): Uint8Array {
+export function buildLogoSdf(): Uint8Array<ArrayBuffer> {
   const n = SDF_SIZE;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = n;

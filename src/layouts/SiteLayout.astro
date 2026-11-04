@@ -3,8 +3,8 @@ import Base from './Base.astro';
 import Logo from '../components/Logo.astro';
 import { SITE } from '../data/site';
 
-interface Props { title?: string; description?: string; }
-const { title, description } = Astro.props;
+interface Props { title?: string; description?: string; wide?: boolean; }
+const { title, description, wide = false } = Astro.props;
 
 const nav = [
   { href: '/blog', label: 'Blog' },
@@ -14,7 +14,7 @@ const nav = [
 const path = Astro.url.pathname;
 ---
 <Base title={title} description={description} bare>
-  <header class="page top">
+  <header class:list={["page top", { wide }]}>
     <a href="/" class="home" aria-label={`${SITE.name} 홈`}>
       <!-- 메인의 큰 로고와 같은 이름: 페이지를 오갈 때 로고가 이어져 움직임 -->
       <span class="mark" transition:name="site-logo"><Logo size={20} /></span>
@@ -27,11 +27,11 @@ const path = Astro.url.pathname;
     </nav>
   </header>
 
-  <main class="page">
+  <main class:list={["page", { wide }]}>
     <slot />
   </main>
 
-  <footer class="page foot">
+  <footer class:list={["page foot", { wide }]}>
     <span>© {new Date().getFullYear()} {SITE.name}</span>
     <span class="foot-links">
       <a href="/rss.xml">RSS</a>
@@ -47,6 +47,7 @@ const path = Astro.url.pathname;
     padding-left: 20px;
     padding-right: 20px;
   }
+  .page.wide { max-width: 880px; }
   .top {
     display: flex;
     justify-content: space-between;

@@ -34,7 +34,14 @@ MAIJEUN 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages
 
 ### 프로젝트·링크 고치기
 
-`src/data/site.ts`의 `PROJECTS`와 `LINKS` 배열에 항목을 추가하면 됩니다. 위에서부터 순서대로 표시됩니다.
+- **프로젝트:** `src/data/site.ts`의 `PROJECTS` 배열에 항목을 추가합니다.
+- **링크:** 링크 페이지는 서비스별 카드가 2열로 배치되는 벤토 그리드입니다. `LINK_GROUPS` 배열에 항목을 추가합니다.
+  - `service`: 아이콘과 카드 색을 정합니다. `github`, `youtube`, `discord`, `steam`, `link` 중 하나입니다.
+  - `wide: true`: 카드가 한 줄을 다 씁니다.
+  - `items`: 카드 안의 칸입니다. 2개 이상이면 카드가 나뉘고, 1개면 낮은 가로 카드가 됩니다.
+  - `href` / `copy`: `href`가 있으면 누를 때 이동하고, `copy`가 있으면 누를 때 그 글자가 복사됩니다.
+  - `note`: 짧은 한 줄 설명입니다. 넣지 않아도 됩니다.
+  - 새 서비스 아이콘은 `src/pages/links.astro`의 `SERVICES`에 [Simple Icons](https://simpleicons.org)에서 가져와 추가합니다.
 
 ### 페이지 전환
 

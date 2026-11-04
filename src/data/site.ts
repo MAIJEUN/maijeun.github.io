@@ -20,12 +20,48 @@ export const NAV = [
   { href: '/links', label: '링크' },
 ];
 
-// 링크 페이지에 표시됩니다. 위에서부터 순서대로.
-// 예) { label: 'Instagram', href: 'https://instagram.com/아이디', handle: '@아이디' }
-//     { label: 'Email', href: 'mailto:me@example.com', handle: 'me@example.com' }
-export const LINKS = [
-  { label: 'GitHub', href: 'https://github.com/MAIJEUN', handle: '@MAIJEUN' },
+// 링크 페이지 (벤토 카드). 위에서부터 순서대로, 2열 그리드에 채워집니다.
+// - service: 아이콘과 색 ('github' | 'youtube' | 'discord' | 'steam' | 'link')
+// - wide: true 면 한 줄을 다 씀
+// - items: 카드 안의 칸. 2개 이상이면 카드가 나뉨 (첫 칸이 조금 더 넓음)
+//   - href: 누르면 이동 / copy: 누르면 이 글자를 복사 (둘 중 하나)
+//   - note: 짧은 한 줄 설명 (선택)
+export type LinkItem = { title: string; handle: string; href?: string; copy?: string; note?: string };
+export type LinkGroup = { service: 'github' | 'youtube' | 'discord' | 'steam' | 'link'; wide?: boolean; items: LinkItem[] };
+
+export const LINK_GROUPS: LinkGroup[] = [
+  {
+    service: 'github',
+    wide: true,
+    items: [
+      { title: 'GitHub', handle: 'github.com/MAIJEUN', href: 'https://github.com/MAIJEUN' },
+      { title: 'mij-studio', handle: 'github.com/mij-studio', href: 'https://github.com/mij-studio' },
+    ],
+  },
+  {
+    service: 'youtube',
+    items: [
+      { title: 'YouTube', handle: '@maijeun', href: 'https://www.youtube.com/@maijeun' },
+      { title: '유매실', handle: '@유매실', href: 'https://www.youtube.com/@유매실' },
+    ],
+  },
+  {
+    service: 'discord',
+    items: [
+      { title: 'Discord', handle: '@maijeun', copy: 'maijeun' },
+      { title: 'Server', handle: 'discord.gg/ZyDf6RJrVu', href: 'https://discord.gg/ZyDf6RJrVu' },
+    ],
+  },
+  {
+    service: 'steam',
+    items: [{ title: 'Steam', handle: 'MAIJEUN', copy: 'MAIJEUN' }],
+  },
 ];
+
+// 다른 곳(소개 페이지 등)에서 쓰는 단순 목록
+export const LINKS = LINK_GROUPS.flatMap((g) =>
+  g.items.filter((i) => i.href).map((i) => ({ label: i.title, href: i.href!, handle: i.handle })),
+);
 
 // 소개 페이지 — 경력/이력
 export const EXPERIENCE = [

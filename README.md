@@ -25,11 +25,24 @@ MAIJEUN 개인 사이트. [Astro](https://astro.build)로 만들고 GitHub Pages
 | 로고 효과 실행 코드 (마우스·기울기·애니메이션) | `src/effects/glass-logo.ts` |
 | 로고 모양 → 거리장(SDF) 변환 | `src/effects/logo-sdf.ts` |
 | 로고 원본 | `public/logo.svg` |
-| 이름, 소개, 링크, 경력, 프로젝트 | `src/data/site.ts` |
+| 이름, 링크 목록, 프로젝트 목록 (소개·경력도) | `src/data/site.ts` |
 | 블로그 글 | `src/content/blog/*.md` |
-| 블로그 레이아웃 (헤더·푸터) | `src/layouts/BlogLayout.astro` |
+| 서브 페이지 공통 레이아웃 (헤더·푸터) | `src/layouts/SiteLayout.astro` |
+| 블로그 / 프로젝트 / 링크 페이지 | `src/pages/blog/`, `src/pages/projects.astro`, `src/pages/links.astro` |
 
-메인 로고 아래에 작은 `blog` 링크가 있습니다. 로고 등장이 끝난 뒤 서서히 나타납니다. `/about`, `/projects`, `/links` 페이지도 들어 있지만 메인에서 가는 링크는 없습니다.
+메인 로고 아래에 작은 `blog · projects · links` 링크가 있고, 로고 등장이 끝난 뒤 서서히 나타납니다. 서브 페이지 헤더에도 같은 메뉴가 있습니다. (`/about` 페이지도 남아 있지만 링크는 없습니다.)
+
+### 프로젝트·링크 고치기
+
+`src/data/site.ts`의 `PROJECTS`와 `LINKS` 배열에 항목을 추가하면 됩니다. 위에서부터 순서대로 표시됩니다.
+
+### 페이지 전환
+
+Astro의 View Transitions(`<ClientRouter />`, `src/layouts/Base.astro`)를 씁니다. 페이지를 처음부터 다시 불러오지 않고 내용만 부드럽게 바뀝니다.
+
+- 메인의 큰 로고와 서브 페이지 헤더의 작은 로고는 같은 `transition:name="site-logo"`를 갖습니다. 그래서 페이지를 오갈 때 로고가 날아가 줄어들거나 커집니다.
+- 유리 로고(WebGPU)는 메인에 올 때 붙고 떠날 때 정리됩니다. 두 번째 방문부터는 등장 애니메이션 없이 바로 나타납니다.
+- 이 기능을 지원하지 않는 브라우저에서는 평범하게 페이지가 넘어갑니다.
 
 ### 효과 조절
 

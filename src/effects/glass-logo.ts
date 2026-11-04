@@ -41,21 +41,62 @@ function axes(yaw: number, pitch: number) {
   };
 }
 
+// 입력(마우스/터치 위치, 기기 기울기)은 페이지를 오가도 계속 기억해 둠.
+// 다른 페이지에서 돌아왔을 때 로고가 바로 커서 쪽을 바라보도록.
+const pointer = { x: 0, y: 0, at: -1e9 };
+const orient = { x: 0, y: 0, at: -1e9 };
+if (typeof window !== 'undefined') {
+  const onPointer = (e: PointerEvent) => {
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    pointer.at = performance.now();
+  };
+  addEventListener('pointermove', onPointer, { passive: true });
+  addEventListener('pointerdown', onPointer, { passive: true });
+  addEventListener('deviceorientation', (e) => {
+    if (e.gamma == null || e.beta == null) return;
+    orient.x = clamp1(e.gamma / 25);
+    orient.y = clamp1((e.beta - 40) / 25);
+    orient.at = performance.now();
+  });
+}
+
+let sdfCache: Uint8Array | undefined; // 로고 거리장은 한 번만 계산
+let mountedBefore = false; // 두 번째부터는 등장 애니메이션 없이 바로
+
 /**
  * 원래 SVG 로고(placeholder) 자리에 WebGPU 유리 블럭 로고를 그립니다.
+ * 정리 함수를 돌려줍니다 (페이지를 떠날 때 호출).
  * WebGPU를 못 쓰거나 '동작 줄이기' 설정이면 false를 반환하고 SVG가 그대로 남습니다.
  */
-export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Element) {
+export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Element): Promise<(() => void) | false> {
   if (!('gpu' in navigator)) return false;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
 
+  const firstTime = !mountedBefore;
+  mountedBefore = true;
+
   const gpu = await init();
-  // GPU 쪽에서 문제가 생기면 원래 SVG 로고로 되돌림
+  const ac = new AbortController();
+  const { signal } = ac;
   let loop: { stop(): void } | undefined;
-  const fallback = (why: unknown) => {
-    console.warn('[glass-logo]', why);
+  let unsubResize: (() => void) | undefined;
+  let disposed = false;
+
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    ac.abort();
     loop?.stop();
+    unsubResize?.();
     document.documentElement.classList.remove(ON_CLASS);
+    gpu.dispose();
+  };
+  // GPU 쪽에서 문제가 생기면 원래 SVG 로고로 되돌림
+  const fallback = (why: unknown) => {
+    if (disposed) return;
+    console.warn('[glass-logo]', why);
+    dispose();
   };
   gpu.onError(fallback);
 
@@ -67,7 +108,8 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
     usage: ['texture_binding', 'copy_dst'],
     label: 'logo-sdf',
   });
-  gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, buildLogoSdf(), { bytesPerRow: n * 4 }, [n, n]);
+  sdfCache ??= buildLogoSdf();
+  gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, sdfCache, { bytesPerRow: n * 4 }, [n, n]);
 
   const screen = surface(gpu, canvas, { dpr: [1, 1.75] });
 
@@ -89,46 +131,35 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
   const glass = effect(gpu, logoShader, {
     label: 'glass-logo',
     set: {
-      params: { ...layout(), ...colors(), ...axes(0, 0), light: [0, 0], time: 0, intro: 0 },
+      params: { ...layout(), ...colors(), ...axes(0, 0), light: [0, 0], time: 0, intro: firstTime ? 0 : 1 },
       sdfTex: sdf,
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },
   });
 
   const relayout = () => glass.set({ params: layout() });
-  screen.onResize(relayout);
-  addEventListener('resize', relayout);
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }));
-
-  // 입력: 마우스/터치 위치, (안드로이드 등) 기기 기울기
-  const pointer = { x: 0, y: 0, at: -1e9 };
-  const onPointer = (e: PointerEvent) => {
-    pointer.x = e.clientX;
-    pointer.y = e.clientY;
-    pointer.at = performance.now();
-  };
-  addEventListener('pointermove', onPointer, { passive: true });
-  addEventListener('pointerdown', onPointer, { passive: true });
-  const orient = { x: 0, y: 0, at: -1e9 };
-  addEventListener('deviceorientation', (e) => {
-    if (e.gamma == null || e.beta == null) return;
-    orient.x = clamp1(e.gamma / 25);
-    orient.y = clamp1((e.beta - 40) / 25);
-    orient.at = performance.now();
-  });
+  unsubResize = screen.onResize(relayout);
+  addEventListener('resize', relayout, { signal });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }), { signal });
 
   // 클릭/탭하면 한 바퀴 회전
   let spinTarget = 0;
-  addEventListener('click', (e) => {
-    if ((e.target as Element | null)?.closest?.('a')) return; // 링크 클릭은 회전하지 않음
-    spinTarget += Math.PI * 2;
-  });
+  addEventListener(
+    'click',
+    (e) => {
+      if ((e.target as Element | null)?.closest?.('a')) return; // 링크 클릭은 회전하지 않음
+      spinTarget += Math.PI * 2;
+    },
+    { signal },
+  );
 
   const tilt = spring(40); // 로고 방향
   const spin = spring(18, 0.55); // 회전 (살짝 출렁이며 멈춤)
   const light = spring(90); // 하이라이트 위치
-  tilt.x = -0.7; // 등장할 때 비스듬한 각도에서 정면으로
-  tilt.y = 0.6;
+  if (firstTime) {
+    tilt.x = -0.7; // 처음 등장할 때는 비스듬한 각도에서 정면으로
+    tilt.y = 0.6;
+  }
   light.x = center.x - 200;
   light.y = center.y - 200;
 
@@ -168,7 +199,7 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
     const yaw = -tilt.x * MAX_TILT + spin.x;
     const pitch = tilt.y * MAX_TILT;
 
-    const k = Math.min(1, t / 0.9);
+    const k = firstTime ? Math.min(1, t / 0.9) : 1;
     const intro = 1 - Math.pow(1 - k, 3);
 
     glass.set({ params: { time: t, intro, ...axes(yaw, pitch), light: [light.x, light.y] } });
@@ -176,10 +207,10 @@ export async function mountGlassLogo(canvas: HTMLCanvasElement, placeholder: Ele
 
     if (!shown) {
       shown = true;
-      requestAnimationFrame(() => document.documentElement.classList.add(ON_CLASS));
+      requestAnimationFrame(() => !disposed && document.documentElement.classList.add(ON_CLASS));
     }
   });
 
   gpu.lost.then(fallback);
-  return true;
+  return dispose;
 }

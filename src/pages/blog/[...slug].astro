@@ -1,6 +1,6 @@
 ---
 import { render } from 'astro:content';
-import BlogLayout from '../../layouts/BlogLayout.astro';
+import SiteLayout from '../../layouts/SiteLayout.astro';
 import { getPosts, readingMinutes, formatDate } from '../../lib';
 
 export async function getStaticPaths() {
@@ -14,7 +14,7 @@ export async function getStaticPaths() {
 const { post, newer, older } = Astro.props;
 const { Content } = await render(post);
 ---
-<BlogLayout title={post.data.title} description={post.data.description}>
+<SiteLayout title={post.data.title} description={post.data.description}>
   <article>
     <header class="post-head">
       <a href="/blog" class="back">← 블로그</a>
@@ -45,7 +45,7 @@ const { Content } = await render(post);
       ) : <span />}
     </nav>
   )}
-</BlogLayout>
+</SiteLayout>
 
 <style>
   .post-head { margin-bottom: 40px; }

@@ -5,16 +5,25 @@ import { SITE } from '../data/site';
 
 interface Props { title?: string; description?: string; }
 const { title, description } = Astro.props;
+
+const nav = [
+  { href: '/blog', label: 'Blog' },
+  { href: '/projects', label: 'Projects' },
+  { href: '/links', label: 'Links' },
+];
+const path = Astro.url.pathname;
 ---
 <Base title={title} description={description} bare>
   <header class="page top">
     <a href="/" class="home" aria-label={`${SITE.name} 홈`}>
-      <Logo size={20} />
+      <!-- 메인의 큰 로고와 같은 이름: 페이지를 오갈 때 로고가 이어져 움직임 -->
+      <span class="mark" transition:name="site-logo"><Logo size={20} /></span>
       <span>{SITE.name}</span>
     </a>
-    <nav>
-      <a href="/blog">Blog</a>
-      <a href="/rss.xml">RSS</a>
+    <nav aria-label="사이트">
+      {nav.map((n) => (
+        <a href={n.href} class:list={[{ active: path.startsWith(n.href) }]} aria-current={path.startsWith(n.href) ? 'page' : undefined}>{n.label}</a>
+      ))}
     </nav>
   </header>
 
@@ -24,7 +33,10 @@ const { title, description } = Astro.props;
 
   <footer class="page foot">
     <span>© {new Date().getFullYear()} {SITE.name}</span>
-    <a href="/">처음으로</a>
+    <span class="foot-links">
+      <a href="/rss.xml">RSS</a>
+      <a href="/">처음으로</a>
+    </span>
   </footer>
 </Base>
 
@@ -43,10 +55,10 @@ const { title, description } = Astro.props;
     padding-top: 28px;
   }
   .home { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
-  .home :global(svg) { flex: none; }
+  .mark { display: inline-flex; width: 20px; height: 20px; }
   nav { display: flex; gap: 20px; font-size: 0.925rem; }
   nav a { color: var(--muted); transition: color 0.15s; }
-  nav a:hover { color: var(--fg); }
+  nav a:hover, nav a.active { color: var(--fg); }
 
   main.page { padding-top: 64px; padding-bottom: 96px; }
 
@@ -58,9 +70,12 @@ const { title, description } = Astro.props;
     font-size: 0.85rem;
     color: var(--faint);
   }
+  .foot-links { display: flex; gap: 16px; }
   .foot a:hover { color: var(--fg); }
 
   @media (max-width: 480px) {
+    .home span:last-child { display: none; }
+    nav { gap: 16px; }
     main.page { padding-top: 44px; }
   }
 </style>

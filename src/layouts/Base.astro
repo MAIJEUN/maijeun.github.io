@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
 import { SITE, NAV, LINKS } from '../data/site';
 
 interface Props { title?: string; description?: string; bare?: boolean; }
@@ -23,6 +24,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:url" content={canonical} />
     <link rel="alternate" type="application/rss+xml" title={SITE.name} href="/rss.xml" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+    <!-- 페이지를 새로 불러오지 않고 내용만 부드럽게 바꿔 이어지게 함 -->
+    <ClientRouter />
   </head>
   <body>
     {!bare && (

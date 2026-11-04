@@ -7,8 +7,13 @@ import { SITE } from '../data/site';
   <main class="home">
     <h1 class="sr-only">{SITE.name}</h1>
     <div class="mark">
-      <Logo class="logo" size="100%" />
-      <a class="blog-link" href="/blog">blog</a>
+      <!-- 서브 페이지 헤더의 작은 로고와 같은 이름: 페이지를 오갈 때 로고가 이어져 움직임 -->
+      <span class="logo-wrap" transition:name="site-logo"><Logo class="logo" size="100%" /></span>
+      <nav class="home-links" aria-label="사이트">
+        <a href="/blog">blog</a>
+        <a href="/projects">projects</a>
+        <a href="/links">links</a>
+      </nav>
     </div>
   </main>
   <canvas class="glass" aria-hidden="true"></canvas>
@@ -17,12 +22,46 @@ import { SITE } from '../data/site';
 <script>
   import { mountGlassLogo } from '../effects/glass-logo';
 
-  const canvas = document.querySelector<HTMLCanvasElement>('canvas.glass')!;
-  const logo = document.querySelector('.home .logo')!;
-  mountGlassLogo(canvas, logo).catch((err) => {
-    // WebGPU를 못 쓰는 환경이면 그냥 SVG 로고가 보입니다.
-    console.warn('[glass-logo]', err);
-    document.documentElement.classList.remove('glass-on');
+  // 페이지 전환(ClientRouter)을 쓰기 때문에 이 스크립트는 한 번만 실행됩니다.
+  // 메인에 올 때마다 유리 로고를 붙이고, 떠날 때 정리합니다.
+  let dispose: (() => void) | undefined;
+  let generation = 0;
+  const html = document.documentElement;
+
+  document.addEventListener('astro:page-load', () => {
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas.glass');
+    const logo = document.querySelector('.home .logo');
+    if (!canvas || !logo) return;
+    const my = ++generation;
+    mountGlassLogo(canvas, logo)
+      .then((d) => {
+        if (!d) return;
+        if (my !== generation || !canvas.isConnected) return d(); // 그새 다른 페이지로 이동함
+        dispose = d;
+      })
+      .catch((err) => {
+        // WebGPU를 못 쓰는 환경이면 그냥 SVG 로고가 보입니다.
+        console.warn('[glass-logo]', err);
+        html.classList.remove('glass-on');
+      });
+  });
+
+  // 메인을 떠나기 직전(화면을 캡처하기 전): 유리 로고 대신 SVG 로고를 보여 두면
+  // 전환할 때 큰 로고가 헤더의 작은 로고로 이어져 날아감
+  document.addEventListener('astro:after-preparation', () => {
+    if (!dispose) return;
+    html.classList.add('glass-snap');
+    html.classList.remove('glass-on');
+  });
+  document.addEventListener('astro:before-swap', () => {
+    generation++;
+    dispose?.();
+    dispose = undefined;
+  });
+  document.addEventListener('astro:after-swap', () => {
+    html.classList.remove('glass-snap');
+    // 다른 페이지에서 돌아온 경우: 링크를 기다리지 않고 바로 보여줌
+    if (document.querySelector('main.home')) html.classList.add('returning');
   });
 </script>
 
@@ -36,6 +75,7 @@ import { SITE } from '../data/site';
   }
   /* 로고는 화면 정가운데 그대로, 링크는 그 아래에 띄워 둠 */
   .mark { position: relative; }
+  .logo-wrap { display: block; }
   .home :global(.logo) {
     display: block;
     width: clamp(110px, 20vw, 190px);
@@ -43,24 +83,30 @@ import { SITE } from '../data/site';
     color: var(--fg);
     transition: opacity 0.2s;
   }
-  .blog-link {
+  .home-links {
     position: absolute;
     z-index: 1; /* 유리 로고 캔버스 위 */
     top: calc(100% + clamp(44px, 7vw, 64px));
     left: 50%;
     transform: translateX(-50%);
-    padding: 6px 10px;
+    display: flex;
+    gap: clamp(14px, 3vw, 22px);
+    animation: fade-in 0.8s ease 1.1s both; /* 로고 등장이 끝난 뒤 서서히 */
+  }
+  .home-links a {
+    padding: 6px 4px;
     font-size: 0.8rem;
     letter-spacing: 0.24em;
     text-indent: 0.24em; /* 자간 때문에 생기는 오른쪽 여백을 맞춰 가운데 정렬 */
     color: var(--faint);
     transition: color 0.2s;
-    animation: fade-in 0.8s ease 1.1s both; /* 로고 등장이 끝난 뒤 서서히 */
   }
-  .blog-link:hover, .blog-link:focus-visible { color: var(--fg); }
-  .blog-link:focus-visible { outline: 1px solid var(--faint); outline-offset: 2px; border-radius: 4px; }
+  .home-links a:hover, .home-links a:focus-visible { color: var(--fg); }
+  .home-links a:focus-visible { outline: 1px solid var(--faint); outline-offset: 2px; border-radius: 4px; }
+  :global(html.returning) .home-links { animation: none; }
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .blog-link { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .home-links { animation: none; } }
+
   .glass {
     position: fixed;
     inset: 0;
@@ -72,6 +118,8 @@ import { SITE } from '../data/site';
   }
   :global(html.glass-on) .glass { opacity: 1; }
   :global(html.glass-on) .home :global(.logo) { opacity: 0; }
+  :global(html.glass-snap) .glass,
+  :global(html.glass-snap) .home :global(.logo) { transition: none; }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;

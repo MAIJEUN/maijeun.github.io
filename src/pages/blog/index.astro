@@ -1,5 +1,5 @@
 ---
-import BlogLayout from '../../layouts/BlogLayout.astro';
+import SiteLayout from '../../layouts/SiteLayout.astro';
 import { getPosts, readingMinutes, formatDate } from '../../lib';
 
 const posts = await getPosts();
@@ -11,7 +11,7 @@ const byYear = Object.entries(
   }, {}),
 ).sort(([a], [b]) => Number(b) - Number(a));
 ---
-<BlogLayout title="블로그" description="생각과 기록">
+<SiteLayout title="블로그" description="생각과 기록">
   <section class="hero">
     <h1>블로그</h1>
     <p class="muted">만든 것들에 대한 회고, 배운 것, 가끔은 그냥 생각들.</p>
@@ -40,7 +40,7 @@ const byYear = Object.entries(
       </ul>
     </section>
   ))}
-</BlogLayout>
+</SiteLayout>
 
 <style>
   .hero { margin-bottom: 48px; }

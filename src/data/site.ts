@@ -20,13 +20,11 @@ export const NAV = [
   { href: '/links', label: '링크' },
 ];
 
-// 링크 페이지 & 푸터에 표시됩니다.
+// 링크 페이지에 표시됩니다. 위에서부터 순서대로.
+// 예) { label: 'Instagram', href: 'https://instagram.com/아이디', handle: '@아이디' }
+//     { label: 'Email', href: 'mailto:me@example.com', handle: 'me@example.com' }
 export const LINKS = [
-  { label: 'GitHub', href: 'https://github.com/', handle: '@username' },
-  { label: 'Instagram', href: 'https://instagram.com/', handle: '@username' },
-  { label: 'YouTube', href: 'https://youtube.com/', handle: '채널 이름' },
-  { label: 'LinkedIn', href: 'https://linkedin.com/', handle: 'MAIJEUN' },
-  { label: 'Email', href: 'mailto:hello@example.com', handle: 'hello@example.com' },
+  { label: 'GitHub', href: 'https://github.com/MAIJEUN', handle: '@MAIJEUN' },
 ];
 
 // 소개 페이지 — 경력/이력
@@ -38,30 +36,13 @@ export const EXPERIENCE = [
 
 export const SKILLS = ['TypeScript', 'React', 'Astro', 'Node.js', 'Figma', 'SQL'];
 
-// 프로젝트 페이지 — featured: true 인 것은 홈에도 표시
+// 프로젝트 페이지에 표시됩니다. 위에서부터 순서대로. href 는 비워도 됩니다.
 export const PROJECTS = [
   {
-    name: '프로젝트 하나',
+    name: 'maijeun.github.io',
     year: '2026',
-    description: '이 프로젝트가 무엇이고 왜 만들었는지 한두 문장으로 적어주세요.',
-    tags: ['Web', 'TypeScript'],
-    href: 'https://example.com',
-    featured: true,
-  },
-  {
-    name: '프로젝트 둘',
-    year: '2025',
-    description: '사이드 프로젝트로 만든 작은 도구. 사용자 수, 성과 등을 적으면 좋습니다.',
-    tags: ['Tool', 'Open Source'],
-    href: 'https://github.com/',
-    featured: true,
-  },
-  {
-    name: '프로젝트 셋',
-    year: '2024',
-    description: '디자인, 글, 영상 등 코드가 아닌 작업물도 괜찮습니다.',
-    tags: ['Design'],
-    href: '',
-    featured: false,
+    description: '이 사이트. Astro로 만들고, 메인 로고는 vgpu(WebGPU)로 그린 유리 블럭입니다.',
+    tags: ['Astro', 'WebGPU', 'vgpu'],
+    href: 'https://github.com/MAIJEUN/maijeun.github.io',
   },
 ];

@@ -168,6 +168,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     links.forEach((el) => set(el, P));
     const id = ++pushAnim;
 
+    // 메뉴마다 움직이는 빠르기가 다름: 버튼에 가까울수록 조금 빠르고(1.15배), 멀수록 느리고 오래 걸림(0.65배)
+    const pace = links.map((_, i) => (n === 1 ? 1 : 1.15 - (0.5 * (n - 1 - i)) / (n - 1)));
     const K = 60; // 밀려 나가는 동안 제자리로 끌어당기는 힘 (작을수록 멀리)
     const SLIDE = 2 * 0.25 * Math.sqrt(K); // 밀려 나갈 때 마찰 (작을수록 멀리)
     const K_BACK = 300; // 돌아올 때 용수철 세기 (클수록 빠르게 튕겨 돌아옴)
@@ -183,7 +185,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       for (let i = 0; i < n; i++) {
         if (!moving[i]) continue;
         if (x[i] < 0 && v[i] > 0) back[i] = true; // 가장 멀리 간 뒤 돌아오기 시작함
-        v[i] += (-(back[i] ? K_BACK : K) * x[i] - (back[i] ? DAMP_BACK : SLIDE) * v[i]) * H;
+        const p = pace[i]; // 용수철은 빠르기의 제곱, 감쇠는 빠르기에 비례 → 출렁이는 모양은 같고 시간만 늘거나 줄어듦
+        v[i] += (-(back[i] ? K_BACK : K) * p * p * x[i] - (back[i] ? DAMP_BACK : SLIDE) * p * v[i]) * H;
         x[i] += v[i] * H;
       }
       for (let it = 0; it < 4; it++) {

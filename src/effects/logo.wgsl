@@ -15,6 +15,8 @@ struct Params {
   range: f32,      // 텍스처 값 1.0 이 의미하는 거리 (CSS px)
   time: f32,
   intro: f32,      // 0 → 1 : 등장
+  solid: f32,      // 1 = 평면 단색 로고(SVG와 똑같이), 0 = 유리. 페이지 전환 때 이어지게
+  thick: f32,      // 두께 비율 0 → 1 (0이면 종이처럼 얇음)
   fg: vec4f,
   bg: vec4f,
 }
@@ -38,6 +40,7 @@ const RIM_STRENGTH: f32 = 0.9;  // 가장자리 빛선 밝기
 const GLASS_LIFT: f32 = 0.06;   // 유리 몸통을 살짝 밝게 띄움 (리퀴드 글래스의 뿌연 빛)
 
 fn unit() -> f32 { return params.box / 128.0; }
+fn halfDepth() -> f32 { return DEPTH * unit() * max(params.thick, 0.02); }
 
 fn sdf2(pl: vec2f) -> f32 {
   let q = pl / params.box + 0.5;
@@ -50,7 +53,7 @@ fn sdf2(pl: vec2f) -> f32 {
 // 로컬 좌표의 블럭 SDF: 로고 외곽선을 그대로 돌출 (모서리 90°)
 fn sdf3(q: vec3f) -> f32 {
   let d2 = sdf2(q.xy);
-  let dz = abs(q.z) - DEPTH * unit();
+  let dz = abs(q.z) - halfDepth();
   return max(d2, dz);
 }
 
@@ -65,7 +68,7 @@ fn grad2(pl: vec2f) -> vec2f {
 // 앞뒤 면 쪽인지(1) 옆면 쪽인지(0). 경계는 아주 좁게만 섞어서 모서리가 각지게 보이도록.
 fn faceAmount(q: vec3f) -> f32 {
   let s = unit();
-  return smoothstep(-0.3 * s, 0.3 * s, (abs(q.z) - DEPTH * s) - sdf2(q.xy));
+  return smoothstep(-0.3 * s, 0.3 * s, (abs(q.z) - halfDepth()) - sdf2(q.xy));
 }
 
 // 법선: 옆면은 외곽선 방향. 앞뒤 면은 가운데는 평평하고 가장자리 LENS_WIDTH 안쪽만 바깥으로 휘어짐 (리퀴드 글래스)
@@ -97,7 +100,7 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
   let dd = length(fract(cell + 0.5) - 0.5) * g;
   // soft: 유리를 거쳐 본 바닥은 살짝 흐리게 (굴절로 늘어난 점이 줄무늬가 되지 않도록)
   let dots = (1.0 - smoothstep(0.55 * s - soft, 0.95 * s + soft, dd)) * 0.16 * fade * (0.95 * s) / (0.95 * s + soft);
-  var col = mix(params.bg.rgb, params.fg.rgb, dots);
+  var col = mix(params.bg.rgb, params.fg.rgb, dots * (1.0 - params.solid));
 
   // 키 라이트(왼쪽 위 앞) 방향으로 블럭 가운데 면을 찾아 그림자
   let toLight = normalize(vec3f(-0.22, -0.38, -1.0));
@@ -107,7 +110,7 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
   let d = sdf2(o.xy + dl.xy * tt);
   let blur = s * 7.0 + soft;
   let shadow = (1.0 - smoothstep(-blur, blur, d)) * (0.07 + 0.08 * smoothstep(-s * 14.0, 0.0, d));
-  col *= 1.0 - shadow * params.intro;
+  col *= 1.0 - shadow * params.intro * (1.0 - params.solid);
 
   // 커스틱: 유리를 통과한 빛이 그림자 안쪽 가장자리에 색깔 띠로 맺힘
   let k = vec3f(
@@ -116,7 +119,7 @@ fn backdrop(q: vec2f, soft: f32) -> vec3f {
     exp(-pow((d + s * 4.6) / (s * 1.6), 2.0)),
   );
   let shimmer = 0.75 + 0.25 * sin(params.time * 1.3 + (o.x + o.y) / (s * 9.0));
-  col += k * 0.12 * shimmer * params.intro;
+  col += k * 0.12 * shimmer * params.intro * (1.0 - params.solid);
   return col;
 }
 
@@ -163,7 +166,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   let C = vec3f(params.center, 0.0);
   let ro = toLocal(E - C);
   let rd = toLocal(rdW);
-  let half = vec3f(params.box * 0.5, params.box * 0.5, DEPTH * s);
+  let half = vec3f(params.box * 0.5, params.box * 0.5, halfDepth());
   let inv = 1.0 / rd;
   let t0 = (-half - ro) * inv;
   let t1 = (half - ro) * inv;
@@ -195,7 +198,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     let ph = ro + rd * select(tMin, t, hit);
     let n = normal3(ph);
     // 앞면과 옆면이 만나는 각진 모서리, 또는 옆면을 비스듬히 스치는 곳 (윤곽선)
-    let fe = abs((abs(ph.z) - DEPTH * s) - sdf2(ph.xy));
+    let fe = abs((abs(ph.z) - halfDepth()) - sdf2(ph.xy));
     edge = edge || fe < 2.0 * px || abs(dot(rd, n)) < 0.3;
     let nW = toWorld(n);
     let phW = toWorld(ph) + C;
@@ -217,7 +220,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     let pe = ph + rIn * t2;
     let ne = normal3(pe);
     // 유리 너머로 보이는 모서리
-    edge = edge || abs((abs(pe.z) - DEPTH * s) - sdf2(pe.xy)) < 2.0 * px;
+    edge = edge || abs((abs(pe.z) - halfDepth()) - sdf2(pe.xy)) < 2.0 * px;
     let peW = toWorld(pe) + C;
     var trans = vec3f(0.0);
     let oMid = refract(rIn, -ne, IOR);
@@ -255,7 +258,9 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     // 라이트 모드: 가장자리 안쪽에 옅은 그림자를 넣어 흰 배경에서도 형태가 보이게
     glass *= 1.0 - lensT * lensT * 0.16 * lum;
 
-    col = mix(base, clamp(glass, vec3f(0.0), vec3f(1.0)), cover * smoothstep(0.0, 1.0, params.intro));
+    // solid = 1 이면 SVG 로고와 똑같은 단색 → 0 으로 가며 유리로
+    let look = mix(clamp(glass, vec3f(0.0), vec3f(1.0)), params.fg.rgb, params.solid);
+    col = mix(base, look, cover * smoothstep(0.0, 1.0, params.intro));
   }
   return Sample(col, edge);
 }

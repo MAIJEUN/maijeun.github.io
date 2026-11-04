@@ -2,6 +2,7 @@ import { clock, effect, frameLoop, init, sampler, surface, texture } from 'vgpu'
 import type { Effect, Gpu } from 'vgpu';
 import logoShader from './logo.wgsl';
 import { buildLogoSdf, LOGO_FILL, SDF_RANGE, SDF_SIZE } from './logo-sdf';
+import { INITIAL_PARAMS } from './glass-params';
 
 const ON_CLASS = 'glass-on';
 
@@ -85,11 +86,7 @@ async function getShared(): Promise<Shared> {
   const glass = effect(gpu, logoShader, {
     label: 'glass-logo',
     set: {
-      params: {
-        res: [1, 1], center: [0, 0], box: 1, range: 1,
-        fg: [0, 0, 0, 1], bg: [1, 1, 1, 1],
-        ...axes(0, 0), light: [0, 0], time: 0, intro: 0,
-      },
+      params: { ...INITIAL_PARAMS },
       sdfTex: sdf,
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },

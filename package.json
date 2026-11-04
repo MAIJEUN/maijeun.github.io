@@ -5,9 +5,10 @@
   "private": true,
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "npm run check:glass && astro build",
     "preview": "astro preview",
-    "check:shader": "vgpu check src/effects/logo.wgsl"
+    "check:shader": "vgpu check src/effects/logo.wgsl",
+    "check:glass": "node scripts/check-glass.mjs"
   },
   "dependencies": {
     "@vgpu/wgsl": "0.6.0",

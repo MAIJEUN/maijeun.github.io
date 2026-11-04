@@ -76,6 +76,12 @@ Astro의 View Transitions(`<ClientRouter />`, `src/layouts/Base.astro`)를 씁�
 - `spring(...)`: 따라가는 속도
 - `click` 처리: 클릭했을 때 회전
 
+### 셰이더 값을 추가할 때
+
+`logo.wgsl`의 `Params`에 값을 추가하면 `src/effects/glass-params.ts`의 `INITIAL_PARAMS`에도 같이 넣어야 합니다. 빠지면 유리 로고가 켜지지 않고 SVG 로고만 보입니다.
+
+배포할 때 `npm run check:glass`가 먼저 실행되어 둘이 맞는지 검사합니다. 맞지 않으면 배포가 멈춥니다.
+
 ## 로컬 실행
 
 ```bash

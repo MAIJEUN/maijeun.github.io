@@ -161,10 +161,13 @@ html.glass-on .home .logo { opacity: 0; }
 :root[data-theme="dark"] .theme-toggle .i-moon,
 :root:not([data-theme="dark"]) .theme-toggle .i-sun { display: none; }
 
-/* 테마 버튼이 페이지 사이를 날아감 (Base.astro 의 메뉴 밀림 연출과 같은 곡선·시간이어야 함) */
-::view-transition-group(theme-toggle) {
-  animation-duration: 0.52s;
-  animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+/* 모든 페이지에서 창 오른쪽 위 끝 (스크롤바 자리로 비워 둔 폭 --gutter 만큼 더 바깥으로 → 창 끝에서 20px).
+   페이지가 바뀌어도 같은 자리라 움직이지 않음 */
+.site-theme {
+  position: absolute;
+  top: 28px;
+  right: calc(20px - var(--gutter, 0px));
+  z-index: 2; /* 유리 로고 캔버스 위 */
 }
 ::view-transition-old(theme-toggle) { display: none; }
 ::view-transition-new(theme-toggle) { animation: none; }

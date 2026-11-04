@@ -160,3 +160,11 @@ html.glass-on .home .logo { opacity: 0; }
 /* 지금 라이트면 달(→ 다크로), 다크면 해(→ 라이트로) */
 :root[data-theme="dark"] .theme-toggle .i-moon,
 :root:not([data-theme="dark"]) .theme-toggle .i-sun { display: none; }
+
+/* 테마 버튼이 페이지 사이를 날아감 (Base.astro 의 메뉴 밀림 연출과 같은 곡선·시간이어야 함) */
+::view-transition-group(theme-toggle) {
+  animation-duration: 0.52s;
+  animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+}
+::view-transition-old(theme-toggle) { display: none; }
+::view-transition-new(theme-toggle) { animation: none; }

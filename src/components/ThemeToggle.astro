@@ -1,9 +1,10 @@
 ---
 // 라이트/다크 전환 버튼. 동작은 Base.astro 스크립트가 맡음 (data-theme-toggle)
+// 홈(오른쪽 끝)과 다른 페이지(헤더 메뉴 끝)의 버튼이 같은 전환 이름을 가져서, 페이지가 바뀔 때 버튼이 날아감
 interface Props { class?: string; }
 const { class: cls } = Astro.props;
 ---
-<button type="button" class:list={['theme-toggle', cls]} data-theme-toggle aria-label="다크 모드로 바꾸기">
+<button type="button" class:list={['theme-toggle', cls]} data-theme-toggle aria-label="다크 모드로 바꾸기" transition:name="theme-toggle">
   <svg class="i-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
     <path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
   </svg>

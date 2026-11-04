@@ -227,7 +227,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
         }
         links.forEach((el, i) => set(el, x[i]));
         const settled = sim > FLY_MS && x.every((q) => Math.abs(q) < 0.1) && v.every((q) => Math.abs(q) < 2);
-        if (settled) {
+        if (settled || sim >= 4000) {
+          // 다 멈췄거나, 혹시 4초 안에 멈추지 않으면 제자리로 되돌리고 끝냄 (어긋난 채 남지 않게)
           links.forEach((el) => set(el, 0));
           return;
         }

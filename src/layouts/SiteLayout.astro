@@ -57,8 +57,11 @@ const path = Astro.url.pathname;
   }
   .home { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
   .mark { display: inline-flex; width: 22px; height: 22px; }
-  nav { display: flex; align-items: center; gap: 20px; font-size: 0.925rem; }
-  nav a { color: var(--muted); transition: color 0.15s; }
+  /* 링크마다 좌우 4px 여백을 히트박스로 둠 (누르기 쉽고, 테마 버튼에 밀려 서로 부딪혀도 글자가 붙지 않음).
+     그만큼 간격을 줄여 보이는 글자 사이는 20px 그대로 */
+  nav { display: flex; align-items: center; gap: 12px; font-size: 0.925rem; }
+  nav a { padding: 0 4px; color: var(--muted); transition: color 0.15s; }
+  nav :global(.theme-toggle) { margin-left: 4px; }
   nav a:hover, nav a.active { color: var(--fg); }
 
   main.page { padding-top: 64px; padding-bottom: 96px; }
@@ -75,7 +78,7 @@ const path = Astro.url.pathname;
   .foot a:hover { color: var(--fg); }
 
   @media (max-width: 480px) {
-    nav { gap: 16px; }
+    nav { gap: 8px; }
     main.page { padding-top: 44px; }
   }
 </style>

@@ -77,12 +77,6 @@ export const EXPERIENCE = [
 export const SKILLS = ['TypeScript', 'React', 'Astro', 'Node.js', 'Figma', 'SQL'];
 
 // 프로젝트 페이지에 표시됩니다. 위에서부터 순서대로. href 는 비워도 됩니다.
-export const PROJECTS = [
-  {
-    name: 'maijeun.github.io',
-    year: '2026',
-    description: '이 사이트. Astro로 만들고, 메인 로고는 vgpu(WebGPU)로 그린 유리 블럭입니다.',
-    tags: ['Astro', 'WebGPU', 'vgpu'],
-    href: 'https://github.com/MAIJEUN/maijeun.github.io',
-  },
+export const PROJECTS: { name: string; year: string; description: string; tags: string[]; href: string }[] = [
+  // 예) { name: '프로젝트 이름', year: '2026', description: '한두 문장 설명', tags: ['Web'], href: 'https://...' },
 ];

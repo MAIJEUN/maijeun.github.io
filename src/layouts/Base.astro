@@ -64,6 +64,13 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     )}
     <!-- 홈의 유리 로고를 그리는 캔버스. 페이지가 바뀌어도 그대로 남아서 로고가 날아가는 동안에도 계속 그림 -->
     <canvas class="glass-canvas" transition:persist="glass-canvas" aria-hidden="true"></canvas>
+    <script is:inline>
+      // 스크롤바 자리 폭을 화면이 그려지기 전에 바로 잼 (홈 전환 버튼이 처음에 움직이지 않게)
+      (function () {
+        var c = document.querySelector('canvas.glass-canvas');
+        if (c) document.documentElement.style.setProperty('--gutter', Math.max(0, c.getBoundingClientRect().left) + 'px');
+      })();
+    </script>
   </body>
 </html>
 
@@ -119,6 +126,16 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     (e as Event & { newDocument: Document }).newDocument.documentElement.dataset.theme = currentTheme();
   });
   document.addEventListener('astro:after-swap', labelToggles);
+
+  // 스크롤바 자리로 비워 둔 폭: 화면 전체를 덮는 고정 캔버스가 창 왼쪽 끝에서 얼마나 안쪽에서 시작하는지로 잼.
+  // (홈의 전환 버튼을 창 오른쪽 끝에 붙일 때 씀)
+  const measureGutter = () => {
+    const c = document.querySelector('canvas.glass-canvas');
+    document.documentElement.style.setProperty('--gutter', `${c ? Math.max(0, c.getBoundingClientRect().left) : 0}px`);
+  };
+  measureGutter();
+  addEventListener('resize', measureGutter);
+  document.addEventListener('astro:after-swap', measureGutter);
 
   type PrepEvent = Event & { from: URL; to: URL };
   type SwapEvent = Event & { viewTransition?: ViewTransition };

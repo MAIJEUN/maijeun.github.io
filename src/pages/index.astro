@@ -62,11 +62,12 @@ import { SITE } from '../data/site';
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .home-links { animation: none; } }
 
-  /* 홈: 오른쪽 위 구석 (다른 페이지 헤더의 버튼과 같은 높이) */
+  /* 홈: 화면 오른쪽 위 끝 (다른 페이지 헤더의 버튼과 같은 높이) */
   :global(.home-theme) {
     position: fixed;
     top: 28px;
-    right: max(20px, calc((100% - 880px) / 2 + 20px));
+    /* 스크롤바 자리로 비워 둔 폭(--gutter, Base.astro 스크립트가 잼)만큼 더 바깥으로 → 창 오른쪽 끝에서 20px */
+    right: calc(20px - var(--gutter, 0px));
     z-index: 2; /* 유리 로고 캔버스 위 */
   }
   .sr-only {

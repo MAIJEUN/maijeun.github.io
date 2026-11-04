@@ -1,6 +1,7 @@
 ---
 import Base from './Base.astro';
 import Logo from '../components/Logo.astro';
+import ThemeToggle from '../components/ThemeToggle.astro';
 import { SITE } from '../data/site';
 
 interface Props { title?: string; description?: string; }
@@ -23,6 +24,7 @@ const path = Astro.url.pathname;
       {nav.map((n) => (
         <a href={n.href} class:list={[{ active: path.startsWith(n.href) }]} aria-current={path.startsWith(n.href) ? 'page' : undefined}>{n.label}</a>
       ))}
+      <ThemeToggle />
     </nav>
   </header>
 
@@ -55,7 +57,7 @@ const path = Astro.url.pathname;
   }
   .home { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
   .mark { display: inline-flex; width: 22px; height: 22px; }
-  nav { display: flex; gap: 20px; font-size: 0.925rem; }
+  nav { display: flex; align-items: center; gap: 20px; font-size: 0.925rem; }
   nav a { color: var(--muted); transition: color 0.15s; }
   nav a:hover, nav a.active { color: var(--fg); }
 

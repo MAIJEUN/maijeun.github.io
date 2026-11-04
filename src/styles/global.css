@@ -9,8 +9,9 @@
   --max: 680px;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+/* 다크 모드: 전환 버튼으로 고른 값(data-theme)을 따르고,
+   스크립트가 아직 안 돌았을 때만 기기 설정을 따름 */
+:root[data-theme="dark"] {
     --bg: #0f0f0f;
     --fg: #ededed;
     --muted: #a0a0a0;
@@ -19,6 +20,17 @@
     --hover: #181818;
     --accent: #ededed;
     color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+      --bg: #0f0f0f;
+      --fg: #ededed;
+      --muted: #a0a0a0;
+      --faint: #6e6e6e;
+      --line: #232323;
+      --hover: #181818;
+      --accent: #ededed;
+      color-scheme: dark;
   }
 }
 
@@ -87,8 +99,14 @@ a.row:hover .row-title { text-decoration: underline; text-underline-offset: 4px;
 .prose hr { border: 0; border-top: 1px solid var(--line); margin: 2.5em 0; }
 .prose img { border-radius: 8px; }
 
+:root[data-theme="dark"] .astro-code,
+:root[data-theme="dark"] .astro-code span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg) !important;
+}
 @media (prefers-color-scheme: dark) {
-  .astro-code, .astro-code span {
+  :root:not([data-theme]) .astro-code,
+  :root:not([data-theme]) .astro-code span {
     color: var(--shiki-dark) !important;
     background-color: var(--shiki-dark-bg) !important;
   }
@@ -121,3 +139,24 @@ html.glass-on .home .logo { opacity: 0; }
 ::view-transition-old(glass-canvas) { display: none; }
 ::view-transition-group(glass-canvas),
 ::view-transition-new(glass-canvas) { animation: none; }
+
+/* 라이트/다크 전환 버튼 */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.theme-toggle:hover { color: var(--fg); background: var(--hover); }
+.theme-toggle:focus-visible { outline: 1px solid var(--faint); outline-offset: 2px; }
+.theme-toggle svg { display: block; }
+/* 지금 라이트면 달(→ 다크로), 다크면 해(→ 라이트로) */
+:root[data-theme="dark"] .theme-toggle .i-moon,
+:root:not([data-theme="dark"]) .theme-toggle .i-sun { display: none; }

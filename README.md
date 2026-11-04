@@ -85,6 +85,12 @@ Astro의 View Transitions(`<ClientRouter />`, `src/layouts/Base.astro`)를 씁�
 
 배포할 때 `npm run check:glass`가 먼저 실행되어 둘이 맞는지 검사합니다. 맞지 않으면 배포가 멈춥니다.
 
+### 라이트/다크 전환
+
+- 서브 페이지는 헤더 메뉴 끝에, 홈은 오른쪽 위에 전환 버튼이 있습니다. 버튼 모양은 `src/components/ThemeToggle.astro`에 있습니다.
+- 고른 값은 브라우저에 저장되어(`localStorage`의 `theme`) 다음 방문에도 유지됩니다. 고른 적이 없으면 기기 설정을 따릅니다.
+- 색은 `src/styles/global.css`의 `:root`(라이트)와 `:root[data-theme="dark"]`(다크)에서 정합니다.
+
 ## 로컬 실행
 
 ```bash

@@ -133,12 +133,14 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
 
   const colors = () => ({ fg: cssColor('--fg'), bg: cssColor('--bg') });
   glass.set({ params: colors() });
+  // 라이트/다크가 바뀌면 (전환 버튼 또는 기기 설정) 색을 다시 읽음
+  addEventListener('site-themechange', () => glass.set({ params: colors() }));
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }));
 
   // 클릭/탭하면 한 바퀴 회전 (홈 화면에서만, 링크 클릭 제외)
   let spinTarget = 0;
   addEventListener('click', (e) => {
-    if (mode !== 'home' || (e.target as Element | null)?.closest?.('a')) return;
+    if (mode !== 'home' || (e.target as Element | null)?.closest?.('a, button')) return; // 링크·버튼 클릭은 회전하지 않음
     spinTarget += Math.PI * 2;
   });
 

@@ -25,6 +25,15 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:url" content={canonical} />
     <link rel="alternate" type="application/rss+xml" title={SITE.name} href="/rss.xml" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+    <!-- 라이트/다크: 고른 값(저장됨)이 있으면 그것, 없으면 기기 설정. 화면이 그려지기 전에 정해서 깜빡임 없게 -->
+    <script is:inline>
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem('theme'); } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
     <!-- 페이지를 새로 불러오지 않고 내용만 부드럽게 바꿔 이어지게 함 -->
     <ClientRouter />
   </head>
@@ -65,6 +74,51 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   // - WebGPU가 없거나 아직 준비가 안 됐으면: 평면 SVG 로고가 페이지 전환으로 날아감 (to-home / from-home 표시로
   //   global.css 가 큰 쪽의 선명한 이미지만 쓰게 함).
   import type { GlassLogo, Rect } from '../effects/glass-logo';
+
+  // ── 라이트/다크 전환 ──
+  const THEME_KEY = 'theme';
+  const stored = () => {
+    try {
+      const t = localStorage.getItem(THEME_KEY);
+      return t === 'light' || t === 'dark' ? t : null;
+    } catch {
+      return null;
+    }
+  };
+  const systemTheme = () => (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const currentTheme = () => (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+  const labelToggles = () => {
+    const label = currentTheme() === 'dark' ? '라이트 모드로 바꾸기' : '다크 모드로 바꾸기';
+    document.querySelectorAll('[data-theme-toggle]').forEach((b) => b.setAttribute('aria-label', label));
+  };
+  const applyTheme = (t: 'light' | 'dark') => {
+    document.documentElement.dataset.theme = t;
+    labelToggles();
+    dispatchEvent(new CustomEvent('site-themechange', { detail: t })); // 유리 로고 색도 바꾸게
+  };
+  labelToggles();
+  document.addEventListener('click', (e) => {
+    if (!(e.target as Element | null)?.closest?.('[data-theme-toggle]')) return;
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {}
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    if (doc.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      doc.startViewTransition(() => applyTheme(next)); // 화면이 부드럽게 바뀜
+    } else {
+      applyTheme(next);
+    }
+  });
+  // 고른 적이 없으면 기기 설정이 바뀔 때 따라감
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!stored()) applyTheme(systemTheme());
+  });
+  // 페이지가 바뀔 때 <html> 속성이 새 페이지 것으로 바뀌므로, 새 페이지에도 지금 테마를 미리 넣어 둠
+  document.addEventListener('astro:before-swap', (e) => {
+    (e as Event & { newDocument: Document }).newDocument.documentElement.dataset.theme = currentTheme();
+  });
+  document.addEventListener('astro:after-swap', labelToggles);
 
   type PrepEvent = Event & { from: URL; to: URL };
   type SwapEvent = Event & { viewTransition?: ViewTransition };

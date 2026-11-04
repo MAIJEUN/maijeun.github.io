@@ -90,13 +90,19 @@ const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 let sdfCache: Uint8Array<ArrayBuffer> | undefined; // 로고 거리장은 한 번만 계산
 
+export type GlassOptions = {
+  /** '동작 줄이기' 설정: 입력이 없을 때 혼자 흔들리지 않음 (유리 효과 자체는 그대로) */
+  calm?: boolean;
+  /** GPU 연결이 끊기거나 오류로 더 못 그리게 됐을 때 (다시 만들 수 있게 알려 줌) */
+  onDead?: (why: string) => void;
+};
+
 /**
  * 페이지를 오가도 유지되는 캔버스(transition:persist)에 유리 로고를 그리는 렌더러를 만듭니다.
- * WebGPU를 못 쓰거나 '동작 줄이기' 설정이면 null — 그때는 평면 SVG 로고만 씀.
+ * WebGPU를 못 쓰면 null 이거나 오류 — 그때는 평면 SVG 로고만 씀.
  */
-export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassLogo | null> {
+export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOptions = {}): Promise<GlassLogo | null> {
   if (!('gpu' in navigator)) return null;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
 
   const gpu: Gpu = await init();
   const n = SDF_SIZE;
@@ -121,28 +127,40 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
   await glass.compile(screen).catch(() => {}); // 미리 준비해 두어 첫 등장 때 끊기지 않게
 
   let dead = false;
+  const listeners = new AbortController();
   const die = (why: unknown) => {
     if (dead) return;
     dead = true;
     console.warn('[glass-logo]', why);
     stopLoop();
+    listeners.abort();
     document.documentElement.classList.remove('glass-on');
+    try {
+      gpu.gpu.destroy?.(); // 오류가 난 장치는 놓아 줌 (다시 만들 때 새 장치를 받게)
+    } catch {}
+    opts.onDead?.(why instanceof Error ? why.message : String((why as { message?: string })?.message ?? why));
   };
   gpu.onError(die);
-  gpu.lost.then(() => die('GPU device lost'));
+  gpu.lost.then((info: unknown) => die(`GPU device lost${(info as { message?: string })?.message ? `: ${(info as { message: string }).message}` : ''}`));
 
   const colors = () => ({ fg: cssColor('--fg'), bg: cssColor('--bg') });
   glass.set({ params: colors() });
   // 라이트/다크가 바뀌면 (전환 버튼 또는 기기 설정) 색을 다시 읽음
-  addEventListener('site-themechange', () => glass.set({ params: colors() }));
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }));
+  // (이 렌더러가 멈추면 함께 떼어 냄 — 다시 만들 때 겹치지 않게)
+  const { signal } = listeners;
+  addEventListener('site-themechange', () => glass.set({ params: colors() }), { signal });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => glass.set({ params: colors() }), { signal });
 
   // 클릭/탭하면 한 바퀴 회전 (홈 화면에서만, 링크 클릭 제외)
   let spinTarget = 0;
-  addEventListener('click', (e) => {
-    if (mode !== 'home' || (e.target as Element | null)?.closest?.('a, button')) return; // 링크·버튼 클릭은 회전하지 않음
-    spinTarget += Math.PI * 2;
-  });
+  addEventListener(
+    'click',
+    (e) => {
+      if (mode !== 'home' || (e.target as Element | null)?.closest?.('a, button')) return; // 링크·버튼 클릭은 회전하지 않음
+      spinTarget += Math.PI * 2;
+    },
+    { signal },
+  );
 
   // ── 상태 ──
   type Mode = 'idle' | 'hold' | 'home' | 'leave';
@@ -213,9 +231,9 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
           lx = rect.x + tx * w * 0.4;
           ly = rect.y + ty * h * 0.4;
         } else {
-          // 입력이 없으면 천천히 혼자 흔들림
-          tx = Math.sin(t * 0.45) * 0.45;
-          ty = Math.sin(t * 0.31 + 1.3) * 0.3;
+          // 입력이 없으면 천천히 혼자 흔들림 ('동작 줄이기'면 살짝 기운 채 가만히)
+          tx = opts.calm ? -0.25 : Math.sin(t * 0.45) * 0.45;
+          ty = opts.calm ? -0.15 : Math.sin(t * 0.31 + 1.3) * 0.3;
           lx = rect.x + tx * w * 0.45;
           ly = rect.y + ty * h * 0.45;
         }

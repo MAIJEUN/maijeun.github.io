@@ -42,7 +42,7 @@ export const LINK_GROUPS: LinkGroup[] = [
     service: 'youtube',
     items: [
       { title: 'YouTube', handle: '@maijeun', href: 'https://www.youtube.com/@maijeun' },
-      { title: '유매실', handle: '@유매실', href: 'https://www.youtube.com/@유매실' },
+      { title: '유매실', handle: '@yougreenplum', href: 'https://www.youtube.com/@yougreenplum' },
     ],
   },
   {

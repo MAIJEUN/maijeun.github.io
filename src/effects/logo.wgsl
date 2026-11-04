@@ -18,6 +18,7 @@ struct Params {
   solid: f32,      // 1 = 평면 단색 로고(SVG와 똑같이), 0 = 유리. 페이지 전환 때 이어지게
   thick: f32,      // 두께 비율 0 → 1 (0이면 종이처럼 얇음)
   bgA: f32,        // 배경(바닥·점 격자·그림자) 불투명도. 1 = 홈 화면, 0 = 로고만 (다른 페이지 위를 날아갈 때)
+  aa: f32,         // 1 = 모서리 안티앨리어싱 켬, 0 = 끔 (날아가는 동안 가볍게)
   fg: vec4f,
   bg: vec4f,
 }
@@ -277,7 +278,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   let px = max(fwidth(p.x), 1e-3); // 화면 픽셀 1개 = CSS px
   let first = shadeAt(p, px);
   var col = first.col;
-  if (first.edge && AA_SAMPLES > 0) {
+  if (first.edge && AA_SAMPLES > 0 && params.aa > 0.5) {
     var offs = array<vec2f, 4>(vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
     var acc = vec4f(0.0);
     for (var i = 0; i < 4; i++) {

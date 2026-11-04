@@ -147,7 +147,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
   let mode: Mode = 'idle';
   let getHomeRect: () => Rect = () => ({ x: 0, y: 0, w: 1 });
   // 움직임 (자리·평면 정도·배경) 한 번에
-  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; t0: number; dur: number; ease: (x: number) => number; done?: () => void };
+  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; el: number; dur: number; ease: (x: number) => number; done?: () => void };
   let tween: Tween | undefined;
   let rect: Rect = { x: 0, y: 0, w: 1 };
   let m = 1; // 1 = 평면 단색, 0 = 유리
@@ -160,6 +160,9 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
 
   const time = clock(gpu);
   let last = 0;
+  let lastNow = 0;
+  // 한 프레임이 오래 걸려도(페이지가 바뀌는 순간 등) 움직임은 이만큼까지만 진행 — 로고가 건너뛰지 않게
+  const MAX_STEP_MS = 34; // 30fps 까지는 제 속도, 그보다 긴 끊김은 건너뛰지 않음
   let loop: { stop(): void } | undefined;
   const stopLoop = () => {
     loop?.stop();
@@ -172,12 +175,14 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       const dt = Math.min(1 / 30, Math.max(0, t - last));
       last = t;
       const now = performance.now();
+      const frameMs = lastNow ? now - lastNow : 0;
+      lastNow = now;
 
       // 자리·평면 정도·배경: 움직이는 중이면 그 사이 값, 아니면 홈 자리
       let e = 1;
       if (tween) {
-        if (tween.t0 < 0) tween.t0 = now; // 첫 프레임부터 시간을 셈 (페이지가 바뀌는 순간의 끊김 때문에 앞부분이 건너뛰지 않게)
-        const k = Math.min(1, Math.max(0, (now - tween.t0) / tween.dur));
+        tween.el += Math.min(frameMs, MAX_STEP_MS);
+        const k = Math.min(1, tween.el / tween.dur);
         e = tween.ease(k);
         const to = tween.to();
         rect = { x: lerp(tween.from.x, to.x, e), y: lerp(tween.from.y, to.y, e), w: lerp(tween.from.w, to.w, e) };
@@ -235,13 +240,16 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
           solid: m,
           thick: Math.min(1, (1 - m) * 1.25), // 두께는 단색이 빠지는 것보다 조금 먼저 생기게
           bgA,
+          aa: tween ? 0 : 1, // 움직이는 동안은 모서리 안티앨리어싱을 꺼서 가볍게
           ...axes(yaw, pitch),
           light: [light.x, light.y],
         },
       });
       frame.pass(screen, glass);
+      // 디버그용: window.__glassTrace 배열이 있으면 매 프레임 상태를 남김
+      (window as unknown as { __glassTrace?: unknown[] }).__glassTrace?.push({ t: Math.round(now), mode, x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), m: +m.toFixed(2), bg: +bgA.toFixed(2) });
 
-      if (tween && tween.t0 >= 0 && now - tween.t0 >= tween.dur) {
+      if (tween && tween.el >= tween.dur) {
         const done = tween.done;
         tween = undefined;
         done?.();
@@ -261,7 +269,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
       getHomeRect = getRect;
       const start = opts.from ?? getRect();
       // 처음 접속: 평면에서 유리로 (배경은 처음부터). 다른 페이지에서 옴: 배경도 같이 차오름
-      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, t0: -1, dur: opts.ms ?? 750, ease: opts.from ? easeOut : easeInOut };
+      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, el: 0, dur: opts.ms ?? 750, ease: opts.from ? easeOut : easeInOut };
       tilt.x = tilt.y = tilt.vx = tilt.vy = 0;
       light.x = start.x - 200;
       light.y = start.y - 200;
@@ -283,7 +291,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement): Promise<GlassL
     leave(to, ms = 420) {
       if (dead) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, t0: -1, dur: ms, ease: easeOut };
+        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, el: 0, dur: ms, ease: easeOut };
         mode = 'leave';
         startLoop();
         tween.done = () => {

@@ -105,11 +105,17 @@ fn floorToScreen(q: vec2f) -> vec2f {
   return params.center + (q - params.center) * e / (pageZ() + e);
 }
 
+// 점 격자는 화면 한가운데(홈 로고 자리)에만 있고 바깥으로 사라짐 — 크기는 홈 로고 폭 clamp(110, 20vw, 190) 기준
+fn dotFade(p: vec2f) -> f32 {
+  let w = clamp(0.2 * params.res.x, 110.0, 190.0);
+  return 1.0 - smoothstep(w * 0.75, w * 2.083, length(p - params.res * 0.5));
+}
+
 fn dotAmount(q: vec2f, soft: f32) -> f32 {
   let p = floorToScreen(q);
   let dd = length(fract(p / DOT_GAP) - 0.5) * DOT_GAP;
   // soft: 유리를 거쳐 본 바닥은 살짝 흐리게 (굴절로 늘어난 점이 줄무늬가 되지 않도록)
-  return (1.0 - smoothstep(DOT_R0 - soft, DOT_R1 + soft, dd)) * DOT_INK * DOT_R1 / (DOT_R1 + soft);
+  return (1.0 - smoothstep(DOT_R0 - soft, DOT_R1 + soft, dd)) * DOT_INK * DOT_R1 / (DOT_R1 + soft) * dotFade(p);
 }
 
 // 블럭이 바닥에 드리우는 빛: rgb = 더해지는 커스틱, a = 그림자 진하기

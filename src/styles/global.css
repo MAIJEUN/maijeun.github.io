@@ -51,9 +51,11 @@ body {
   word-break: keep-all;
   -webkit-font-smoothing: antialiased;
 }
-/* 사이트 전체 배경: 홈 유리 로고 바닥과 같은 점 격자 (logo.wgsl 의 DOT_* 값과 같아야 유리 너머 점과 이어짐).
-   화면에 고정 — 스크롤해도 움직이지 않음 */
+/* 모든 페이지 배경: 홈 유리 로고 바닥과 같은 점 격자. 화면 한가운데(홈 로고 자리)에만 있고 바깥으로 갈수록 사라짐.
+   크기도 홈 로고에 맞춤 (로고 폭 = clamp(110px, 20vw, 190px)). 화면에 고정 — 스크롤해도 움직이지 않음.
+   logo.wgsl 의 DOT_* · dotFade 와 같아야 유리 너머로 보이는 점과 이어짐 */
 body::before {
+  --logo-w: clamp(110px, 20vw, 190px);
   content: '';
   position: fixed;
   inset: 0;
@@ -61,6 +63,15 @@ body::before {
   pointer-events: none;
   background-image: radial-gradient(circle at 11px 11px, color-mix(in srgb, var(--fg) 16%, var(--bg)) 1.35px, transparent 2.35px);
   background-size: 22px 22px;
+  /* 로고 폭의 0.75배까지 진하게, 2.08배에서 완전히 사라짐 (셰이더의 smoothstep 곡선을 따라) */
+  --fade: radial-gradient(circle at 50% 50%,
+    #000 calc(var(--logo-w) * 0.75),
+    rgb(0 0 0 / 0.84) calc(var(--logo-w) * 1.083),
+    rgb(0 0 0 / 0.5) calc(var(--logo-w) * 1.417),
+    rgb(0 0 0 / 0.16) calc(var(--logo-w) * 1.75),
+    transparent calc(var(--logo-w) * 2.083));
+  -webkit-mask-image: var(--fade);
+  mask-image: var(--fade);
 }
 a { color: inherit; text-decoration: none; }
 img { max-width: 100%; height: auto; }

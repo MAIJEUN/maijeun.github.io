@@ -129,9 +129,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
   // ── 테마 버튼이 홈 → 다른 페이지로 날아와 헤더 메뉴를 밀어내는 연출 ──
   // 버튼은 페이지 전환(global.css 의 theme-toggle)으로 움직이고, 메뉴는 여기서 같은 곡선으로 계산해 맞물리게 함.
-  // 메뉴는 처음엔 '버튼이 없을 때 자리'(버튼 폭만큼 오른쪽)에 가만히 있다가, 버튼이 부딪히는 순간 버튼 속도를
-  // 충격으로 받아 튕겨 나가고, 마찰로 느려지며 약한 용수철로 제자리를 살짝(약 4px) 지나쳤다 돌아와 멈춤.
-  // 버튼과 겹치지는 않음. 가까운 메뉴부터 조금씩 늦게 따라가 연쇄적으로 밀리는 느낌.
+  // 메뉴 하나하나가 실제 크기(히트박스)를 가진 물체: 처음엔 '버튼이 없을 때 자리'(버튼 폭만큼 오른쪽)에 가만히 있다가,
+  // 날아온 버튼의 왼쪽 끝이 SNS 의 오른쪽 끝에 닿는 순간 튕겨 나가고, SNS 가 Projects 에, Projects 가 Blog 에
+  // 부딪히며 운동량을 넘겨줌 (뉴턴의 요람처럼 끝에 있는 것이 가장 멀리 날아감). 무거운 정도는 폭에 비례.
+  // 미끄러지는 동안은 마찰이 약하고, 제자리로 돌아올 때는 감쇠를 세게 해 출렁이지 않고 미끄러져 들어옴.
   const FLY_MS = 520; // global.css 의 animation-duration 과 같게
   const cubicBezier = (x1: number, y1: number, x2: number, y2: number) => {
     const bx = (t: number) => 3 * x1 * t * (1 - t) ** 2 + 3 * x2 * t * t * (1 - t) + t ** 3;
@@ -155,56 +156,74 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     const btn = document.querySelector<HTMLElement>('.top [data-theme-toggle]');
     const links = [...document.querySelectorAll<HTMLElement>('.top nav a')];
     if (!btn || !links.length || dx0 <= 0) return;
+    const n = links.length;
+    const box = links.map((el) => el.getBoundingClientRect()); // 제자리 히트박스
     const b = btn.getBoundingClientRect();
-    const lastRight = links[links.length - 1].getBoundingClientRect().right;
-    const P = b.right - lastRight; // 버튼이 없을 때 메뉴가 있을 자리까지 거리 (= 버튼 폭 + 간격)
-    const G = b.left - lastRight; // 제자리일 때 메뉴와 버튼 사이 간격
-    const set = (el: HTMLElement, x: number) => (el.style.transform = x ? `translateX(${x.toFixed(2)}px)` : '');
+    const P = b.right - box[n - 1].right; // 버튼이 없을 때 메뉴가 있을 자리까지 거리 (= 버튼 폭 + 간격)
+    const reach = b.left - box[n - 1].right; // 제자리 버튼과 맨 오른쪽 메뉴 사이 간격
+    const gap = box.slice(1).map((r, i) => r.left - box[i].right); // 메뉴 사이 간격 (제자리 기준)
+    const inv = box.map((r) => 1 / Math.max(8, r.width)); // 1/질량 (폭에 비례하는 무게)
+    const set = (el: HTMLElement, x: number) => (el.style.transform = Math.abs(x) > 0.01 ? `translateX(${x.toFixed(2)}px)` : '');
+    const x = links.map(() => P), v = links.map(() => 0), moving = links.map(() => false);
     links.forEach((el) => set(el, P));
     const id = ++pushAnim;
-    // 가장 가까운 메뉴(맨 오른쪽)의 움직임을 계산하고, 나머지는 조금씩 늦게 따라감
-    let x = P, v = 0, touched = false, prevB = dx0;
-    const history: { t: number; x: number }[] = [];
-    const K = 300; // 제자리로 돌아오는 용수철 세기
-    const C = 2 * 0.4 * Math.sqrt(K) + 8; // 감쇠 + 마찰 (작을수록 더 출렁임)
-    const KICK = 1.3; // 부딪힐 때 버튼 속도의 몇 배로 튕겨 나가는지
-    const LAG = 34; // 메뉴끼리 따라가는 시간 차 (ms)
+
+    const K = 60; // 제자리로 끌어당기는 힘
+    const W = Math.sqrt(K);
+    const SLIDE = 2 * 0.25 * W; // 밀려 나갈 때 마찰 (작을수록 멀리)
+    const RETURN = 2 * 0.9 * W; // 돌아올 때 감쇠 (클수록 출렁임 없이 들어옴)
+    const BOUNCE = 0.95; // 부딪힐 때 튕기는 정도 (1 = 완전 탄성)
+    const SOFT = 30; // 이보다 느리게 닿으면 튕기지 않고 그냥 맞붙음 (떨림 방지, px/s)
+    const H = 0.002; // 2ms 단위로 계산
+    const btnX = (ms: number) => (ms < FLY_MS ? dx0 * (1 - flyEase(Math.max(0, ms) / FLY_MS)) : 0); // 버튼이 제자리에서 얼마나 오른쪽에 있는지
+
+    const tick = (ms: number) => {
+      const xb = btnX(ms);
+      const vb = (btnX(ms + 1) - btnX(ms - 1)) * 500; // px/s
+      for (let i = 0; i < n; i++) {
+        if (!moving[i]) continue;
+        const back = x[i] < 0 && v[i] > 0;
+        v[i] += (-K * x[i] - (back ? RETURN : SLIDE) * v[i]) * H;
+        x[i] += v[i] * H;
+      }
+      for (let it = 0; it < 4; it++) {
+        // 버튼(움직임이 정해진 무거운 물체) ↔ 맨 오른쪽 메뉴
+        const lim = xb + reach;
+        if (x[n - 1] > lim) {
+          x[n - 1] = lim;
+          moving[n - 1] = true;
+          if (v[n - 1] > vb) v[n - 1] = vb - (v[n - 1] - vb > SOFT ? BOUNCE : 0) * (v[n - 1] - vb);
+        }
+        // 메뉴 ↔ 메뉴: 히트박스가 겹치면 무게 비율대로 밀어내고 운동량을 주고받음
+        for (let i = n - 2; i >= 0; i--) {
+          const over = x[i] - gap[i] - x[i + 1];
+          if (over <= 0) continue;
+          const sum = inv[i] + inv[i + 1];
+          x[i] -= (over * inv[i]) / sum;
+          x[i + 1] += (over * inv[i + 1]) / sum;
+          moving[i] = moving[i + 1] = true;
+          const rel = v[i + 1] - v[i]; // 음수면 서로 다가오는 중
+          if (rel < 0) {
+            const j = (-(1 + (rel < -SOFT ? BOUNCE : 0)) * rel) / sum;
+            v[i] -= j * inv[i];
+            v[i + 1] += j * inv[i + 1];
+          }
+        }
+      }
+    };
+
     start.then(() => {
       const t0 = performance.now();
-      let last = t0;
+      let sim = 0; // 계산이 진행된 시간 (ms)
       const step = (now: number) => {
         if (id !== pushAnim) return;
-        const t = now - t0;
-        const dt = Math.min(0.032, (now - last) / 1000);
-        last = now;
-        const xb = t < FLY_MS ? dx0 * (1 - flyEase(t / FLY_MS)) : 0; // 버튼이 제자리에서 얼마나 오른쪽에 있는지
-        const vb = dt > 0 ? (xb - prevB) / dt : 0;
-        prevB = xb;
-        const limit = G + xb; // 메뉴가 버튼과 겹치지 않는 최대 위치
-        if (!touched && x >= limit) {
-          touched = true; // 부딪힘: 버튼 속도를 충격으로 받음
-          x = limit;
-          v = vb * KICK;
+        const t = Math.min(now - t0, 4000); // 버튼 전환과 같은 시계로 (계산이 가벼워 몰아서 해도 됨)
+        while (sim + H * 1000 <= t) {
+          sim += H * 1000;
+          tick(sim);
         }
-        if (touched) {
-          // 프레임이 길어도 안정적이도록 4ms 단위로 나눠 계산
-          for (let left = dt; left > 1e-6; left -= 0.004) {
-            const h = Math.min(0.004, left);
-            v += (-K * x - C * v) * h;
-            x += v * h;
-          }
-          if (x > limit) {
-            x = limit; // 버튼에 계속 밀림
-            v = Math.min(v, vb);
-          }
-        }
-        history.push({ t, x });
-        const at = (tt: number) => {
-          for (let i = history.length - 1; i >= 0; i--) if (history[i].t <= tt) return history[i].x;
-          return P;
-        };
-        links.forEach((el, i) => set(el, at(t - (links.length - 1 - i) * LAG)));
-        const settled = t > FLY_MS && Math.abs(x) < 0.05 && Math.abs(v) < 2 && t - history[0].t > FLY_MS + LAG * links.length;
+        links.forEach((el, i) => set(el, x[i]));
+        const settled = sim > FLY_MS && x.every((q) => Math.abs(q) < 0.1) && v.every((q) => Math.abs(q) < 2);
         if (settled) {
           links.forEach((el) => set(el, 0));
           return;

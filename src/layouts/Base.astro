@@ -246,12 +246,10 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   let glassReady: Promise<GlassLogo | null> | null = null;
   let revives = 0;
   const MAX_REVIVES = 3;
-  let lite = false; // 한 번 끊긴 뒤로는 가볍게 그림 (GPU 가 버거워서 끊겼을 수 있으므로)
   const revive = () => {
     if (revives >= MAX_REVIVES) return setStatus('gave up — flat logo from now on');
     revives++;
-    lite = true;
-    glassLog(`retry ${revives}/${MAX_REVIVES} (lite) in ${0.7 * revives}s`);
+    glassLog(`retry ${revives}/${MAX_REVIVES} in ${0.7 * revives}s`);
     const go = () => {
       if (homeLogo()) ensureGlass().then((g) => g && showGlassAtHome());
       // 다른 페이지에 있으면 홈으로 갈 때 다시 만듦
@@ -276,7 +274,6 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       .then((m) =>
         m.createGlassLogo(canvas, {
           calm: calm(),
-          lite,
           onLog: glassLog,
           onDead: (why) => {
             setStatus(`lost — ${why}`);

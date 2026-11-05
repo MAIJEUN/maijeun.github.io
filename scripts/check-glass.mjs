@@ -4,23 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { effect, init, sampler, texture } from 'vgpu/mock';
 import { prepareShader } from '@vgpu/wgsl/prepare';
 import { resolveShader } from '@vgpu/wgsl/runtime';
-import { readFileSync } from 'node:fs';
 import { INITIAL_PARAMS } from '../src/effects/glass-params.ts';
-import { toLite } from './wgsl-lite.mjs';
 
 const entry = fileURLToPath(new URL('../src/effects/logo.wgsl', import.meta.url));
-// 보통 판과 가벼운 판(ARM Mali 등) 둘 다 검사
-const shaders = {
-  'logo.wgsl': prepareShader((await resolveShader({ entry })).wgsl),
-  'logo-lite.wgsl': prepareShader(toLite(readFileSync(entry, 'utf8'))),
-};
+const shader = prepareShader((await resolveShader({ entry })).wgsl);
 const gpu = await init();
 try {
   const sdfTex = texture(gpu, { kind: '2d', size: [4, 4], format: 'rgba8unorm', usage: ['texture_binding', 'copy_dst'] });
-  for (const [name, shader] of Object.entries(shaders)) {
-    effect(gpu, shader, { label: name, set: { params: { ...INITIAL_PARAMS }, sdfTex, sdfSampler: sampler(gpu) } });
-  }
-  console.log('check:glass OK — 셰이더 값과 초기값이 맞습니다 (보통 판·가벼운 판).');
+  effect(gpu, shader, { set: { params: { ...INITIAL_PARAMS }, sdfTex, sdfSampler: sampler(gpu) } });
+  console.log('check:glass OK — 셰이더 값과 초기값이 맞습니다.');
 } catch (e) {
   console.error('check:glass 실패 — src/effects/glass-params.ts 의 INITIAL_PARAMS 를 셰이더(logo.wgsl)의 Params 와 맞춰 주세요.');
   console.error(e?.message ?? e);

@@ -1,8 +1,6 @@
 import { clock, effect, frameLoop, init, sampler, surface, texture } from 'vgpu';
 import type { Effect, Gpu } from 'vgpu';
 import logoShader from './logo.wgsl';
-// 같은 셰이더의 가벼운 판 (빌드할 때 logo.wgsl 에서 만들어짐 — scripts/wgsl-lite.mjs)
-import logoLiteShader from './logo-lite.wgsl';
 import { buildLogoSdf, LOGO_FILL, SDF_RANGE, SDF_SIZE } from './logo-sdf';
 import { INITIAL_PARAMS } from './glass-params';
 
@@ -92,32 +90,30 @@ const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 let sdfCache: Uint8Array<ArrayBuffer> | undefined; // 로고 거리장은 한 번만 계산
 
-// 이 기기(브라우저)에서 셰이더가 GPU 를 멈추게 한 기록: 판별 마지막 시각. 2주 지나면 다시 시도.
-// 주소 끝에 #glass-reset 을 붙여 열면 지움.
-const CRASH_KEY = 'glass-gpu-crash';
-const CRASH_TTL = 14 * 24 * 3600 * 1000;
-type CrashMemo = { full?: number; lite?: number };
-function readCrashMemo(): CrashMemo {
+// 이 셰이더를 감당하지 못하는 GPU(예: 일부 ARM Mali 크롬북)는 지원하지 않음 — 평면 로고만 씀.
+// 셰이더 준비 중에 실패하면 브라우저에 기억해 두고 2주 동안 다시 시도하지 않음
+// (실패할 때 GPU 가 통째로 멈추고 크롬이 한동안 GPU 를 막아서, 매번 다시 시도하면 기기에 부담).
+// 주소 끝에 #glass-reset 을 붙여 열면 기록을 지우고 다시 시도.
+const FAIL_KEY = 'glass-gpu-failed';
+const FAIL_TTL = 14 * 24 * 3600 * 1000;
+function failedBefore(): boolean {
   try {
-    if (location.hash.includes('glass-reset')) localStorage.removeItem(CRASH_KEY);
-    const m = JSON.parse(localStorage.getItem(CRASH_KEY) ?? '{}') as CrashMemo;
-    const fresh = (t?: number) => (t && Date.now() - t < CRASH_TTL ? t : undefined);
-    return { full: fresh(m.full), lite: fresh(m.lite) };
+    if (location.hash.includes('glass-reset')) localStorage.removeItem(FAIL_KEY);
+    const at = Number(localStorage.getItem(FAIL_KEY));
+    return at > 0 && Date.now() - at < FAIL_TTL;
   } catch {
-    return {};
+    return false;
   }
 }
-function writeCrashMemo(m: CrashMemo) {
+function rememberFailure() {
   try {
-    localStorage.setItem(CRASH_KEY, JSON.stringify(m));
+    localStorage.setItem(FAIL_KEY, String(Date.now()));
   } catch {}
 }
 
 export type GlassOptions = {
   /** '동작 줄이기' 설정: 입력이 없을 때 혼자 흔들리지 않음 (유리 효과 자체는 그대로) */
   calm?: boolean;
-  /** 가볍게 그림 (화면 밀도 1, 반복 횟수 줄임, 안티앨리어싱 끔) — GPU 가 버거워한 기기에서 다시 만들 때 */
-  lite?: boolean;
   /** GPU 연결이 끊기거나 오류로 더 못 그리게 됐을 때 (다시 만들 수 있게 알려 줌) */
   onDead?: (why: string) => void;
   /** 진단용 기록 (GPU 정보, 몇 초마다 프레임 속도) */
@@ -130,19 +126,12 @@ export type GlassOptions = {
  */
 export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOptions = {}): Promise<GlassLogo | null> {
   if (!('gpu' in navigator)) return null;
-
-  // 이 기기에서 전에 셰이더 준비 중에 GPU 가 멈춘 적이 있는지 (멈추면 크롬이 한동안 GPU 를 막으므로 같은 실수를 반복하지 않음)
-  const memo = readCrashMemo();
-  if (memo.lite) {
-    opts.onLog?.('disabled: the lite shader crashed this GPU before (open #glass-reset to try again)');
+  if (failedBefore()) {
+    opts.onLog?.('disabled: this GPU failed the glass shader before (open #glass-reset to try again)');
     return null;
   }
 
   const gpu: Gpu = await init();
-  const info = gpu.device.adapterInfo;
-  // ARM(Mali)·퀄컴(Adreno)·PowerVR GPU 이거나, 전에 보통 판이 멈췄거나, 끊긴 뒤 다시 만드는 중이면 가벼운 판
-  const riskyGpu = /arm|qualcomm|img-tec|imagination|powervr|mali|adreno/i.test(`${info?.vendor} ${info?.architecture}`);
-  const variant: 'full' | 'lite' = opts.lite || riskyGpu || memo.full ? 'lite' : 'full';
   const n = SDF_SIZE;
   const sdf = texture(gpu, {
     kind: '2d',
@@ -153,50 +142,38 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
   });
   sdfCache ??= buildLogoSdf();
   gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, sdfCache, { bytesPerRow: n * 4 }, [n, n]);
-  const glass: Effect = effect(gpu, variant === 'lite' ? logoLiteShader : logoShader, {
-    label: `glass-logo-${variant}`,
+  const glass: Effect = effect(gpu, logoShader, {
+    label: 'glass-logo',
     set: {
       params: { ...INITIAL_PARAMS },
       sdfTex: sdf,
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },
   });
-  // 휴대폰·태블릿(터치)은 화면 밀도를 조금 낮춰 GPU 부담을 줄임. 가볍게 모드는 1
-  const maxDpr = variant === 'lite' ? 1 : matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
+  const maxDpr = 1.75;
   const screen = surface(gpu, canvas, { dpr: [1, maxDpr], alphaMode: 'premultiplied' });
-  glass.set({ params: { quality: opts.lite ? 0 : 1 } });
-  opts.onLog?.(`gpu ${info?.vendor || '?'} / ${info?.architecture || '?'}${info?.device ? ` / ${info.device}` : ''} · ${variant} shader · dpr≤${maxDpr}`);
-
-  // 셰이더 준비 ~ 처음 몇십 프레임 사이에 멈추면 이 기기에서 이 판은 안 되는 것으로 기억
-  let framesDrawn = 0;
-  const STARTUP_FRAMES = 30;
+  const info = gpu.device.adapterInfo;
+  opts.onLog?.(`gpu ${info?.vendor || '?'} / ${info?.architecture || '?'}${info?.device ? ` / ${info.device}` : ''} · dpr≤${maxDpr}`);
   const t0 = performance.now();
-  let compileFailed = false;
-  await glass.compile(screen).catch((e) => {
-    compileFailed = true;
-    opts.onLog?.(`compile failed: ${e?.message ?? e}`);
-  }); // 미리 준비해 두어 첫 등장 때 끊기지 않게
-  if (compileFailed) {
-    // 셰이더를 준비하다 실패 (GPU 가 같이 멈춘 경우가 많음): 기억해 두고 여기서 그만 — 평면 로고만 씀
-    writeCrashMemo({ ...readCrashMemo(), [variant]: Date.now() });
-    opts.onLog?.(`remembered: ${variant} shader fails on this GPU${variant === 'full' ? ' → lite next time' : ' → flat logo from now on'}`);
+  let compileError: unknown;
+  await glass.compile(screen).catch((e) => (compileError = e ?? 'unknown')); // 미리 준비해 두어 첫 등장 때 끊기지 않게
+  if (compileError !== undefined) {
+    // 이 GPU 는 지원하지 않음: 기억해 두고 평면 로고로
+    rememberFailure();
+    opts.onLog?.(`compile failed: ${(compileError as { message?: string })?.message ?? compileError} → flat logo on this device`);
     try {
       gpu.gpu.destroy?.();
     } catch {}
-    throw new Error(`${variant} shader failed to compile`);
+    return null;
   }
   opts.onLog?.(`compiled in ${Math.round(performance.now() - t0)}ms`);
 
   let dead = false;
   const listeners = new AbortController();
-  const die = (why: unknown, crashed = false) => {
+  const die = (why: unknown) => {
     if (dead) return;
     dead = true;
     console.warn('[glass-logo]', why);
-    if (compileFailed || (crashed && framesDrawn < STARTUP_FRAMES)) {
-      writeCrashMemo({ ...readCrashMemo(), [variant]: Date.now() });
-      opts.onLog?.(`remembered: ${variant} shader fails on this GPU${variant === 'full' ? ' → lite next time' : ' → flat logo from now on'}`);
-    }
     stopLoop();
     listeners.abort();
     document.documentElement.classList.remove('glass-on');
@@ -205,9 +182,12 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
     } catch {}
     opts.onDead?.(why instanceof Error ? why.message : String((why as { message?: string })?.message ?? why));
   };
-  gpu.onError((e) => die(e));
-  // reason 'destroyed' = 일부러 놓아 준 것, 그 밖('unknown') = GPU 가 멈춤
-  gpu.lost.then((lost: GPUDeviceLostInfo) => die(`GPU device lost (${lost?.reason ?? '?'})${lost?.message ? `: ${lost.message}` : ''}`, lost?.reason !== 'destroyed'));
+  gpu.onError(die);
+  gpu.lost.then((lost: GPUDeviceLostInfo) => {
+    // 그리기 시작하자마자 GPU 가 멈췄으면(일부러 놓아 준 'destroyed' 가 아니면) 이 GPU 도 지원하지 않는 것으로 기억
+    if (!dead && lost?.reason !== 'destroyed' && framesDrawn < 30) rememberFailure();
+    die(`GPU device lost (${lost?.reason ?? '?'})${lost?.message ? `: ${lost.message}` : ''}`);
+  });
 
   const colors = () => ({ fg: cssColor('--fg'), bg: cssColor('--bg') });
   glass.set({ params: colors() });
@@ -250,6 +230,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
   // 한 프레임이 오래 걸려도(페이지가 바뀌는 순간 등) 움직임은 이만큼까지만 진행 — 로고가 건너뛰지 않게
   const MAX_STEP_MS = 34; // 30fps 까지는 제 속도, 그보다 긴 끊김은 건너뛰지 않음
   const stats = { n: 0, sum: 0, worst: 0, from: performance.now() };
+  let framesDrawn = 0;
   let loop: { stop(): void } | undefined;
   const stopLoop = () => {
     loop?.stop();

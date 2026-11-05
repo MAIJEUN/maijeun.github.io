@@ -37,6 +37,16 @@ const TINT: vec3f = vec3f(0.90, 0.96, 0.97); // 유리 색 (두꺼울수록 진�
 const PERSPECTIVE: f32 = 4.0;   // 시점 거리 = box × 이 값
 const FLOAT: f32 = 0.05;        // 바닥에서 떠 있는 높이 (box 비율)
 const AA_SAMPLES: i32 = 4;      // 모서리 안티앨리어싱 (0 = 끔, 가벼워짐)
+
+// 가벼운 판(logo-lite.wgsl)은 빌드할 때 이 파일에서 만들어짐 (scripts/wgsl-lite.mjs):
+// '// #full' ~ '// #end' 사이는 빠지고, '// #lite ' 로 시작하는 줄은 주석이 풀려 들어감.
+// 일부 GPU(ARM Mali 등) 드라이버는 이 셰이더를 컴파일하다 멈춰서, 그런 기기에서는 가벼운 판을 씀.
+// #full
+const MAX_STEPS: i32 = 128;     // 블럭까지 광선을 나아가는 최대 횟수
+const MAX_INNER: i32 = 64;      // 블럭 안을 지나는 최대 횟수
+// #end
+// #lite const MAX_STEPS: i32 = 64;
+// #lite const MAX_INNER: i32 = 32;
 const LENS_WIDTH: f32 = 7.0;    // 리퀴드 글래스: 면 가장자리에서 렌즈처럼 휘는 폭
 const LENS: f32 = 1.1;          // 리퀴드 글래스: 가장자리 휨 세기 (클수록 굴절 강함)
 const RIM_WIDTH: f32 = 1.3;     // 가장자리 빛선 두께
@@ -203,10 +213,10 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   var minD = 1e9;
   var tMin = t;
   let lite = params.quality < 0.5;
-  let steps = select(128, 56, lite);
+  let steps = select(MAX_STEPS, min(MAX_STEPS, 56), lite);
   if (tn < tf) {
     var done = false;
-    for (var i = 0; i < 128; i++) {
+    for (var i = 0; i < MAX_STEPS; i++) {
       if (i >= steps || t > tf) { done = t > tf; break; }
       let d = sdf3(ro + rd * t);
       if (d < minD) { minD = d; tMin = t; }
@@ -240,8 +250,8 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     let rIn = refract(rd, n, 1.0 / IOR);
     var t2 = 0.6 * s;
     var exited = false;
-    let inner = select(64, 24, lite);
-    for (var j = 0; j < 64; j++) {
+    let inner = select(MAX_INNER, min(MAX_INNER, 24), lite);
+    for (var j = 0; j < MAX_INNER; j++) {
       if (j >= inner) { break; }
       let d = -sdf3(ph + rIn * t2);
       if (d < 0.25 * px) { exited = true; break; }
@@ -259,6 +269,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
       let r = toWorld(reflect(rIn, -ne));
       trans = mix(params.bg.rgb * 0.6 + 0.08, vec3f(0.9), smoothstep(-0.3, 0.6, -r.y));
     } else {
+      // #full
       for (var k = 0; k < 3; k++) {
         let eta = IOR + (f32(k) - 1.0) * DISPERSION;
         var o = refract(rIn, -ne, eta);
@@ -266,6 +277,8 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
         let sc = sceneRay(peW, toWorld(o), 2.5 * s);
         trans[k] = sc[k];
       }
+      // #end
+      // #lite trans = sceneRay(peW, toWorld(oMid), 2.5 * s); // 가벼운 판: 색 분산 없이 한 번만
     }
     let absorb = exp(-(t2 / s) * 0.02 * (1.0 - TINT));
     trans *= absorb;
@@ -302,6 +315,8 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
   let p = uv * params.res;
   let px = max(fwidth(p.x), 1e-3); // 화면 픽셀 1개 = CSS px
+  // #lite return shadeAt(p, px).col; // 가벼운 판: 안티앨리어싱 없음
+  // #full
   // 가운데 1점 + (모서리면) 4점. shadeAt 을 한 곳에서만 불러야 셰이더가 작게 컴파일됨
   // (여러 곳에서 부르면 무거운 계산이 통째로 여러 벌 복사돼, 휴대폰 GPU 드라이버가 컴파일하다 멈출 수 있음)
   var offs = array<vec2f, 5>(vec2f(0.0), vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
@@ -317,4 +332,5 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     count += 1.0;
   }
   return acc / count; // 미리 알파를 곱한 색 — 캔버스는 premultiplied 모드
+  // #end
 }

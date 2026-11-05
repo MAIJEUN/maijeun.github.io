@@ -1,6 +1,8 @@
 import { clock, effect, frameLoop, init, sampler, surface, texture } from 'vgpu';
 import type { Effect, Gpu } from 'vgpu';
 import logoShader from './logo.wgsl';
+// 같은 셰이더의 가벼운 판 (빌드할 때 logo.wgsl 에서 만들어짐 — scripts/wgsl-lite.mjs)
+import logoLiteShader from './logo-lite.wgsl';
 import { buildLogoSdf, LOGO_FILL, SDF_RANGE, SDF_SIZE } from './logo-sdf';
 import { INITIAL_PARAMS } from './glass-params';
 
@@ -90,6 +92,27 @@ const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 let sdfCache: Uint8Array<ArrayBuffer> | undefined; // 로고 거리장은 한 번만 계산
 
+// 이 기기(브라우저)에서 셰이더가 GPU 를 멈추게 한 기록: 판별 마지막 시각. 2주 지나면 다시 시도.
+// 주소 끝에 #glass-reset 을 붙여 열면 지움.
+const CRASH_KEY = 'glass-gpu-crash';
+const CRASH_TTL = 14 * 24 * 3600 * 1000;
+type CrashMemo = { full?: number; lite?: number };
+function readCrashMemo(): CrashMemo {
+  try {
+    if (location.hash.includes('glass-reset')) localStorage.removeItem(CRASH_KEY);
+    const m = JSON.parse(localStorage.getItem(CRASH_KEY) ?? '{}') as CrashMemo;
+    const fresh = (t?: number) => (t && Date.now() - t < CRASH_TTL ? t : undefined);
+    return { full: fresh(m.full), lite: fresh(m.lite) };
+  } catch {
+    return {};
+  }
+}
+function writeCrashMemo(m: CrashMemo) {
+  try {
+    localStorage.setItem(CRASH_KEY, JSON.stringify(m));
+  } catch {}
+}
+
 export type GlassOptions = {
   /** '동작 줄이기' 설정: 입력이 없을 때 혼자 흔들리지 않음 (유리 효과 자체는 그대로) */
   calm?: boolean;
@@ -108,7 +131,18 @@ export type GlassOptions = {
 export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOptions = {}): Promise<GlassLogo | null> {
   if (!('gpu' in navigator)) return null;
 
+  // 이 기기에서 전에 셰이더 준비 중에 GPU 가 멈춘 적이 있는지 (멈추면 크롬이 한동안 GPU 를 막으므로 같은 실수를 반복하지 않음)
+  const memo = readCrashMemo();
+  if (memo.lite) {
+    opts.onLog?.('disabled: the lite shader crashed this GPU before (open #glass-reset to try again)');
+    return null;
+  }
+
   const gpu: Gpu = await init();
+  const info = gpu.device.adapterInfo;
+  // ARM(Mali)·퀄컴(Adreno)·PowerVR GPU 이거나, 전에 보통 판이 멈췄거나, 끊긴 뒤 다시 만드는 중이면 가벼운 판
+  const riskyGpu = /arm|qualcomm|img-tec|imagination|powervr|mali|adreno/i.test(`${info?.vendor} ${info?.architecture}`);
+  const variant: 'full' | 'lite' = opts.lite || riskyGpu || memo.full ? 'lite' : 'full';
   const n = SDF_SIZE;
   const sdf = texture(gpu, {
     kind: '2d',
@@ -119,8 +153,8 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
   });
   sdfCache ??= buildLogoSdf();
   gpu.gpu.queue.writeTexture({ texture: sdf.gpu }, sdfCache, { bytesPerRow: n * 4 }, [n, n]);
-  const glass: Effect = effect(gpu, logoShader, {
-    label: 'glass-logo',
+  const glass: Effect = effect(gpu, variant === 'lite' ? logoLiteShader : logoShader, {
+    label: `glass-logo-${variant}`,
     set: {
       params: { ...INITIAL_PARAMS },
       sdfTex: sdf,
@@ -128,21 +162,41 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
     },
   });
   // 휴대폰·태블릿(터치)은 화면 밀도를 조금 낮춰 GPU 부담을 줄임. 가볍게 모드는 1
-  const maxDpr = opts.lite ? 1 : matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
+  const maxDpr = variant === 'lite' ? 1 : matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
   const screen = surface(gpu, canvas, { dpr: [1, maxDpr], alphaMode: 'premultiplied' });
   glass.set({ params: { quality: opts.lite ? 0 : 1 } });
-  const info = gpu.device.adapterInfo;
-  opts.onLog?.(`gpu ${info?.vendor || '?'} / ${info?.architecture || '?'}${info?.device ? ` / ${info.device}` : ''} · dpr≤${maxDpr}${opts.lite ? ' · lite' : ''}`);
+  opts.onLog?.(`gpu ${info?.vendor || '?'} / ${info?.architecture || '?'}${info?.device ? ` / ${info.device}` : ''} · ${variant} shader · dpr≤${maxDpr}`);
+
+  // 셰이더 준비 ~ 처음 몇십 프레임 사이에 멈추면 이 기기에서 이 판은 안 되는 것으로 기억
+  let framesDrawn = 0;
+  const STARTUP_FRAMES = 30;
   const t0 = performance.now();
-  await glass.compile(screen).catch((e) => opts.onLog?.(`compile failed: ${e?.message ?? e}`)); // 미리 준비해 두어 첫 등장 때 끊기지 않게
+  let compileFailed = false;
+  await glass.compile(screen).catch((e) => {
+    compileFailed = true;
+    opts.onLog?.(`compile failed: ${e?.message ?? e}`);
+  }); // 미리 준비해 두어 첫 등장 때 끊기지 않게
+  if (compileFailed) {
+    // 셰이더를 준비하다 실패 (GPU 가 같이 멈춘 경우가 많음): 기억해 두고 여기서 그만 — 평면 로고만 씀
+    writeCrashMemo({ ...readCrashMemo(), [variant]: Date.now() });
+    opts.onLog?.(`remembered: ${variant} shader fails on this GPU${variant === 'full' ? ' → lite next time' : ' → flat logo from now on'}`);
+    try {
+      gpu.gpu.destroy?.();
+    } catch {}
+    throw new Error(`${variant} shader failed to compile`);
+  }
   opts.onLog?.(`compiled in ${Math.round(performance.now() - t0)}ms`);
 
   let dead = false;
   const listeners = new AbortController();
-  const die = (why: unknown) => {
+  const die = (why: unknown, crashed = false) => {
     if (dead) return;
     dead = true;
     console.warn('[glass-logo]', why);
+    if (compileFailed || (crashed && framesDrawn < STARTUP_FRAMES)) {
+      writeCrashMemo({ ...readCrashMemo(), [variant]: Date.now() });
+      opts.onLog?.(`remembered: ${variant} shader fails on this GPU${variant === 'full' ? ' → lite next time' : ' → flat logo from now on'}`);
+    }
     stopLoop();
     listeners.abort();
     document.documentElement.classList.remove('glass-on');
@@ -151,8 +205,9 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
     } catch {}
     opts.onDead?.(why instanceof Error ? why.message : String((why as { message?: string })?.message ?? why));
   };
-  gpu.onError(die);
-  gpu.lost.then((info: unknown) => die(`GPU device lost${(info as { message?: string })?.message ? `: ${(info as { message: string }).message}` : ''}`));
+  gpu.onError((e) => die(e));
+  // reason 'destroyed' = 일부러 놓아 준 것, 그 밖('unknown') = GPU 가 멈춤
+  gpu.lost.then((lost: GPUDeviceLostInfo) => die(`GPU device lost (${lost?.reason ?? '?'})${lost?.message ? `: ${lost.message}` : ''}`, lost?.reason !== 'destroyed'));
 
   const colors = () => ({ fg: cssColor('--fg'), bg: cssColor('--bg') });
   glass.set({ params: colors() });
@@ -292,6 +347,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
         },
       });
       frame.pass(screen, glass);
+      framesDrawn++;
       // 디버그용: window.__glassTrace 배열이 있으면 매 프레임 상태를 남김
       (window as unknown as { __glassTrace?: unknown[] }).__glassTrace?.push({ t: Math.round(now), mode, x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), m: +m.toFixed(2), bg: +bgA.toFixed(2) });
 

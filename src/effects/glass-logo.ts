@@ -31,34 +31,53 @@ function spring(stiffness: number, damping = 1) {
 
 const MAX_TILT = 0.42; // 마우스 쪽으로 최대 기울기 (rad, ≈ 24°)
 
-/** yaw(좌우)·pitch(상하) 회전 → 블럭의 로컬 x/y/z 축 (월드 방향) */
-function axes(yaw: number, pitch: number) {
+/**
+ * yaw(좌우)·pitch(상하) 회전 뒤 roll(화면 안에서 돌기, 시계 방향 +) → 블럭의 로컬 x/y/z 축 (월드 방향)
+ */
+function axes(yaw: number, pitch: number, roll = 0) {
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cr = Math.cos(roll), sr = Math.sin(roll);
+  const rot = (x: number, y: number, z: number) => [x * cr - y * sr, x * sr + y * cr, z, 0];
   return {
-    axisU: [cy, 0, -sy, 0],
-    axisV: [sy * sp, cp, cy * sp, 0],
-    axisW: [sy * cp, -sp, cy * cp, 0],
+    axisU: rot(cy, 0, -sy),
+    axisV: rot(sy * sp, cp, cy * sp),
+    axisW: rot(sy * cp, -sp, cy * cp),
   };
 }
 
 // 입력(마우스/터치 위치, 기기 기울기)은 페이지를 오가도 계속 기억해 둠.
 // 다른 페이지에서 돌아왔을 때 로고가 바로 커서 쪽을 바라보도록.
-const pointer = { x: 0, y: 0, at: -1e9 };
-const orient = { x: 0, y: 0, at: -1e9 };
+const pointer = { x: 0, y: 0, at: -1e9, touch: false };
+// 휴대폰 기울기: 화면 기준 중력 방향 (x 오른쪽, y 위쪽, z 화면 밖으로; 길이 1).
+// 똑바로 세워 들면 (0, -1, 0), 바닥에 눕히면 (0, 0, -1).
+const orient = { x: 0, y: -1, z: 0, at: -1e9 };
 if (typeof window !== 'undefined') {
   const onPointer = (e: PointerEvent) => {
     pointer.x = e.clientX;
     pointer.y = e.clientY;
     pointer.at = performance.now();
+    pointer.touch = e.pointerType === 'touch';
   };
   addEventListener('pointermove', onPointer, { passive: true });
   addEventListener('pointerdown', onPointer, { passive: true });
   addEventListener('deviceorientation', (e) => {
     if (e.gamma == null || e.beta == null) return;
-    orient.x = clamp1(e.gamma / 25);
-    orient.y = clamp1((e.beta - 40) / 25);
+    // 기기 기준 아래 방향 (W3C 기기 방향: Z-X'-Y'' 순서의 alpha·beta·gamma 에서 계산)
+    const b = (e.beta * Math.PI) / 180, g = (e.gamma * Math.PI) / 180;
+    const dx = Math.sin(g) * Math.cos(b), dy = -Math.sin(b), dz = -Math.cos(g) * Math.cos(b);
+    // 화면이 가로로 돌아가 있으면 그만큼 돌려 화면 기준으로 (90 = 반시계로 눕힘)
+    const ang = ((screen.orientation?.angle ?? (window as { orientation?: number }).orientation ?? 0) * Math.PI) / 180;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    orient.x = dx * ca - dy * sa;
+    orient.y = dx * sa + dy * ca;
+    orient.z = dz;
     orient.at = performance.now();
   });
+  // 아이폰은 기울기 센서를 쓰려면 사용자가 한 번 눌러서 허락해야 함 → 처음 누를 때 물어봄 (한 번만)
+  const D = (window as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent;
+  if (typeof D?.requestPermission === 'function') {
+    addEventListener('click', () => D.requestPermission!().catch(() => {}), { once: true });
+  }
 }
 
 
@@ -213,14 +232,17 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
   let mode: Mode = 'idle';
   let getHomeRect: () => Rect = () => ({ x: 0, y: 0, w: 1 });
   // 움직임 (자리·평면 정도·배경) 한 번에
-  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; el: number; dur: number; ease: (x: number) => number; done?: () => void };
+  type Tween = { from: Rect; to: () => Rect; m0: number; m1: number; b0: number; b1: number; yaw0: number; pitch0: number; roll0: number; el: number; dur: number; ease: (x: number) => number; done?: () => void };
   let tween: Tween | undefined;
   let rect: Rect = { x: 0, y: 0, w: 1 };
   let m = 1; // 1 = 평면 단색, 0 = 유리
   let bgA = 0; // 배경 불투명도
   let yaw = 0;
   let pitch = 0;
+  let roll = 0; // 화면 안에서 돈 각도 (휴대폰을 돌렸을 때 수평 유지)
   const tilt = spring(40); // 로고 방향
+  const rollS = spring(30); // 수평 유지 회전 (x 만 씀)
+  const base = { x: 0, y: -1, z: 0, at: -1e9, fresh: true }; // 휴대폰을 들고 있는 자세 (천천히 따라감)
   const spin = spring(18, 0.55); // 회전 (살짝 출렁이며 멈춤)
   const light = spring(90); // 하이라이트 위치
 
@@ -275,20 +297,38 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
         // 떠나는 중: 지금 기울기에서 정면으로 풀림
         yaw = tween ? tween.yaw0 * (1 - e) : 0;
         pitch = tween ? tween.pitch0 * (1 - e) : 0;
+        roll = tween ? tween.roll0 * (1 - e) : 0;
       } else if (mode === 'home') {
         const w = innerWidth, h = innerHeight;
-        let tx: number, ty: number, lx: number, ly: number;
-        if (now - pointer.at < 4000) {
+        let tx = 0, ty = 0, lx = rect.x, ly = rect.y;
+        let rollTo = 0;
+        const sensor = now - orient.at < 1000; // 휴대폰 기울기 센서가 살아 있음
+        if (sensor) {
+          // ── 휴대폰: 기울기 센서로 ──
+          // 들고 있는 자세(기준)는 천천히 따라감 → 어떻게 들고 있든 그 자세에서 기울인 만큼만 반응하고 곧 정면으로 돌아옴
+          if (base.fresh || now - base.at > 1500) Object.assign(base, { x: orient.x, y: orient.y, z: orient.z, fresh: false });
+          const k = 1 - Math.exp(-dt / 1.4);
+          base.x += (orient.x - base.x) * k;
+          base.y += (orient.y - base.y) * k;
+          base.z += (orient.z - base.z) * k;
+          base.at = now;
+          // 기울인 쪽(중력이 쏠린 쪽)으로 로고가 고개를 돌림
+          tx = clamp1((orient.x - base.x) * 3.2);
+          ty = clamp1(-(orient.z - base.z) * 3.2);
+          lx = rect.x + tx * w * 0.4;
+          ly = rect.y + ty * h * 0.4;
+          // 수평 유지: 폰을 핸들처럼 돌리면 로고는 반대로 돌아 땅과 수평을 유지 (폰을 바닥에 눕히면 기준이 없으므로 서서히 풂)
+          const upright = Math.min(1, Math.max(0, (Math.hypot(orient.x, orient.y) - 0.3) / 0.3));
+          rollTo = upright * Math.atan2(-orient.x, -orient.y);
+        }
+        if (now - pointer.at < 4000 && !(sensor && pointer.touch)) {
           // 마우스 쪽을 바라봄
           tx = clamp1((pointer.x - rect.x) / (w * 0.5));
           ty = clamp1((pointer.y - rect.y) / (h * 0.5));
           lx = pointer.x;
           ly = pointer.y;
-        } else if (now - orient.at < 1000) {
-          tx = orient.x;
-          ty = orient.y;
-          lx = rect.x + tx * w * 0.4;
-          ly = rect.y + ty * h * 0.4;
+        } else if (sensor) {
+          // (위에서 계산한 센서 값 그대로)
         } else {
           // 입력이 없으면 천천히 혼자 흔들림 ('동작 줄이기'면 살짝 기운 채 가만히)
           tx = opts.calm ? -0.25 : Math.sin(t * 0.45) * 0.45;
@@ -300,12 +340,16 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
         tilt.step(tx * (1 - m), ty * (1 - m), dt);
         light.step(lx, ly, dt);
         spin.step(spinTarget, 0, dt);
+        // 수평 유지 각도는 지금 각도에서 가까운 쪽으로 돌아감 (한 바퀴를 넘어갈 때 반대로 휙 돌지 않게)
+        rollS.step(rollS.x + wrapAngle(rollTo * (1 - m) - rollS.x), 0, dt);
         // 마우스 쪽을 바라보도록: 오른쪽이면 yaw<0, 아래쪽이면 pitch>0
         yaw = -tilt.x * MAX_TILT + spin.x;
         pitch = tilt.y * MAX_TILT;
+        roll = rollS.x;
       } else {
         yaw = 0;
         pitch = 0;
+        roll = 0;
       }
 
       const box = rect.w / LOGO_FILL;
@@ -323,7 +367,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
           thick: Math.min(1, (1 - m) * 1.25), // 두께는 단색이 빠지는 것보다 조금 먼저 생기게
           bgA,
           aa: tween ? 0 : 1, // 움직이는 동안은 모서리 안티앨리어싱을 꺼서 가볍게
-          ...axes(yaw, pitch),
+          ...axes(yaw, pitch, roll),
           light: [light.x - cr.left, light.y - cr.top],
         },
       });
@@ -352,8 +396,10 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
       getHomeRect = getRect;
       const start = opts.from ?? getRect();
       // 처음 접속: 평면에서 유리로 (배경은 처음부터). 다른 페이지에서 옴: 배경도 같이 차오름
-      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, el: 0, dur: opts.ms ?? 750, ease: opts.from ? easeOut : easeInOut };
+      tween = { from: start, to: getRect, m0: 1, m1: 0, b0: opts.from ? 0 : 1, b1: 1, yaw0: 0, pitch0: 0, roll0: 0, el: 0, dur: opts.ms ?? 750, ease: opts.from ? easeOut : easeInOut };
       tilt.x = tilt.y = tilt.vx = tilt.vy = 0;
+      rollS.x = rollS.vx = 0;
+      base.fresh = true;
       light.x = start.x - 200;
       light.y = start.y - 200;
       rect = start;
@@ -374,7 +420,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
     leave(to, ms = 420) {
       if (dead) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, el: 0, dur: ms, ease: easeOut };
+        tween = { from: rect, to: () => to, m0: m, m1: 1, b0: bgA, b1: 0, yaw0: wrapAngle(yaw), pitch0: pitch, roll0: wrapAngle(roll), el: 0, dur: ms, ease: easeOut };
         mode = 'leave';
         startLoop();
         tween.done = () => {

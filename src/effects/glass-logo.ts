@@ -93,8 +93,12 @@ let sdfCache: Uint8Array<ArrayBuffer> | undefined; // 로고 거리장은 한 �
 export type GlassOptions = {
   /** '동작 줄이기' 설정: 입력이 없을 때 혼자 흔들리지 않음 (유리 효과 자체는 그대로) */
   calm?: boolean;
+  /** 가볍게 그림 (화면 밀도 1, 반복 횟수 줄임, 안티앨리어싱 끔) — GPU 가 버거워한 기기에서 다시 만들 때 */
+  lite?: boolean;
   /** GPU 연결이 끊기거나 오류로 더 못 그리게 됐을 때 (다시 만들 수 있게 알려 줌) */
   onDead?: (why: string) => void;
+  /** 진단용 기록 (GPU 정보, 몇 초마다 프레임 속도) */
+  onLog?: (msg: string) => void;
 };
 
 /**
@@ -123,10 +127,15 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
       sdfSampler: sampler(gpu, { magFilter: 'linear', minFilter: 'linear' }),
     },
   });
-  // 휴대폰·태블릿(터치)은 화면 밀도를 조금 낮춰 GPU 부담을 줄임
-  const maxDpr = matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
+  // 휴대폰·태블릿(터치)은 화면 밀도를 조금 낮춰 GPU 부담을 줄임. 가볍게 모드는 1
+  const maxDpr = opts.lite ? 1 : matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
   const screen = surface(gpu, canvas, { dpr: [1, maxDpr], alphaMode: 'premultiplied' });
-  await glass.compile(screen).catch(() => {}); // 미리 준비해 두어 첫 등장 때 끊기지 않게
+  glass.set({ params: { quality: opts.lite ? 0 : 1 } });
+  const info = gpu.device.adapterInfo;
+  opts.onLog?.(`gpu ${info?.vendor || '?'} / ${info?.architecture || '?'}${info?.device ? ` / ${info.device}` : ''} · dpr≤${maxDpr}${opts.lite ? ' · lite' : ''}`);
+  const t0 = performance.now();
+  await glass.compile(screen).catch((e) => opts.onLog?.(`compile failed: ${e?.message ?? e}`)); // 미리 준비해 두어 첫 등장 때 끊기지 않게
+  opts.onLog?.(`compiled in ${Math.round(performance.now() - t0)}ms`);
 
   let dead = false;
   const listeners = new AbortController();
@@ -185,6 +194,7 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
   let lastNow = 0;
   // 한 프레임이 오래 걸려도(페이지가 바뀌는 순간 등) 움직임은 이만큼까지만 진행 — 로고가 건너뛰지 않게
   const MAX_STEP_MS = 34; // 30fps 까지는 제 속도, 그보다 긴 끊김은 건너뛰지 않음
+  const stats = { n: 0, sum: 0, worst: 0, from: performance.now() };
   let loop: { stop(): void } | undefined;
   const stopLoop = () => {
     loop?.stop();
@@ -199,6 +209,17 @@ export async function createGlassLogo(canvas: HTMLCanvasElement, opts: GlassOpti
       const now = performance.now();
       const frameMs = lastNow ? now - lastNow : 0;
       lastNow = now;
+      // 진단: 5초마다 평균 프레임 속도와 가장 긴 프레임
+      if (opts.onLog && frameMs > 0 && frameMs < 1000) {
+        stats.n++;
+        stats.sum += frameMs;
+        stats.worst = Math.max(stats.worst, frameMs);
+        if (now - stats.from > 5000) {
+          opts.onLog(`${Math.round((1000 * stats.n) / stats.sum)}fps, worst ${Math.round(stats.worst)}ms, ${canvas.width}×${canvas.height}px`);
+          stats.n = stats.sum = stats.worst = 0;
+          stats.from = now;
+        }
+      }
 
       // 자리·평면 정도·배경: 움직이는 중이면 그 사이 값, 아니면 홈 자리
       let e = 1;

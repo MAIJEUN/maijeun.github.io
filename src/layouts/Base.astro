@@ -157,23 +157,88 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const flyMs = (ms: number) => (calm() ? 1 : ms);
 
-  // 유리 로고 상태 (주소 끝에 #glass-debug 를 붙이면 화면 왼쪽 아래에 보임 — 휴대폰에서 원인 확인용)
+  // 유리 로고 진단 기록 (주소 끝에 #glass-debug 를 붙이면 화면 왼쪽 아래에 기록이 쌓여 보임 — 휴대폰에서 원인 확인용).
+  // 덮어쓰지 않고 시간과 함께 한 줄씩 쌓고, 글자를 선택하거나 '복사' 버튼으로 통째로 복사할 수 있음
+  // 한 번 켜면 다른 페이지로 가도 (주소에서 #glass-debug 가 빠져도) 계속 보임
+  let debug = location.hash.includes('glass-debug');
+  addEventListener('hashchange', () => {
+    if (location.hash.includes('glass-debug')) {
+      debug = true;
+      renderLog();
+    }
+  });
+  const debugOn = () => debug;
+  const logLines: string[] = [];
+  const startedAt = performance.now();
+  const renderLog = () => {
+    if (!debugOn()) return;
+    let box = document.getElementById('glass-debug');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'glass-debug';
+      box.style.cssText =
+        'position:fixed;left:8px;bottom:8px;z-index:9;width:min(560px,calc(100vw - 16px));border-radius:8px;font:11px/1.45 ui-monospace,monospace;background:var(--fg);color:var(--bg);opacity:.92;user-select:text;-webkit-user-select:text';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 8px 0';
+      const title = document.createElement('b');
+      title.textContent = 'glass log';
+      title.style.flex = '1';
+      const btn = (label: string, onClick: (b: HTMLButtonElement) => void) => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.style.cssText = 'font:inherit;padding:2px 8px;border-radius:4px;border:1px solid currentColor;background:transparent;color:inherit;cursor:pointer';
+        b.addEventListener('click', () => onClick(b));
+        return b;
+      };
+      const copy = btn('복사', async (b) => {
+        const text = [navigator.userAgent, ...logLines].join('\n');
+        try {
+          await navigator.clipboard.writeText(text);
+          b.textContent = '복사됨';
+        } catch {
+          // 클립보드를 못 쓰면 글자를 전부 선택해 둠 (길게 눌러 복사)
+          const sel = getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(box!.querySelector('pre')!);
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+          b.textContent = '선택됨';
+        }
+        setTimeout(() => (b.textContent = '복사'), 1500);
+      });
+      const fold = btn('접기', (b) => {
+        const pre = box!.querySelector('pre')!;
+        const hidden = pre.style.display === 'none';
+        pre.style.display = hidden ? '' : 'none';
+        b.textContent = hidden ? '접기' : '펼치기';
+      });
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'margin:0;padding:6px 8px 8px;max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-all';
+      bar.append(title, copy, fold);
+      box.append(bar, pre);
+      document.body.append(box);
+    }
+    const pre = box.querySelector('pre')!;
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+    pre.textContent = logLines.join('\n');
+    if (atBottom) pre.scrollTop = pre.scrollHeight; // 맨 아래를 보고 있을 때만 따라 내려감 (위를 읽는 중이면 그대로)
+  };
+  const glassLog = (msg: string) => {
+    logLines.push(`${((performance.now() - startedAt) / 1000).toFixed(1).padStart(6)}s  ${msg}`);
+    if (logLines.length > 200) logLines.shift();
+    renderLog();
+  };
   let glassStatus = '';
   const setStatus = (s: string) => {
     glassStatus = s;
     html.dataset.glass = s;
-    if (!location.hash.includes('glass-debug')) return;
-    let el = document.getElementById('glass-debug');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'glass-debug';
-      el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9;max-width:calc(100vw - 16px);padding:4px 8px;border-radius:6px;font:12px/1.4 ui-monospace,monospace;background:var(--fg);color:var(--bg);opacity:.85;pointer-events:none';
-      document.body.append(el);
-    }
-    el.textContent = `glass: ${s}`;
+    glassLog(s);
   };
-  // 페이지가 바뀌면 <html> 속성이 새로 바뀌므로 다시 적어 둠
-  document.addEventListener('astro:after-swap', () => glassStatus && setStatus(glassStatus));
+  // 페이지가 바뀌면 <html>·<body> 가 새것으로 바뀌므로 다시 붙임
+  document.addEventListener('astro:after-swap', () => {
+    if (glassStatus) html.dataset.glass = glassStatus;
+    renderLog();
+  });
 
   // 유리 로고 렌더러는 필요할 때 한 번만 만듦 (WebGPU 코드는 이때 따로 불러옴).
   // 휴대폰에서 다른 앱에 갔다 오는 등으로 GPU 연결이 끊기면 다시 만들어 이어서 그림 (연달아 실패하면 몇 번까지만).
@@ -181,9 +246,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
   let glassReady: Promise<GlassLogo | null> | null = null;
   let revives = 0;
   const MAX_REVIVES = 3;
+  let lite = false; // 한 번 끊긴 뒤로는 가볍게 그림 (GPU 가 버거워서 끊겼을 수 있으므로)
   const revive = () => {
-    if (revives >= MAX_REVIVES) return setStatus(`${glassStatus} (gave up)`);
+    if (revives >= MAX_REVIVES) return setStatus('gave up — flat logo from now on');
     revives++;
+    lite = true;
+    glassLog(`retry ${revives}/${MAX_REVIVES} (lite) in ${0.7 * revives}s`);
     const go = () => {
       if (homeLogo()) ensureGlass().then((g) => g && showGlassAtHome());
       // 다른 페이지에 있으면 홈으로 갈 때 다시 만듦
@@ -208,6 +276,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       .then((m) =>
         m.createGlassLogo(canvas, {
           calm: calm(),
+          lite,
+          onLog: glassLog,
           onDead: (why) => {
             setStatus(`lost — ${why}`);
             // 유리 로고가 대신 그리던 헤더 로고를 다시 보이게 (날아가던 중에 끊겼을 때)

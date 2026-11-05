@@ -16,6 +16,7 @@ export const INITIAL_PARAMS = {
   thick: 0,
   bgA: 1,
   aa: 1,
+  quality: 1,
   fg: [0, 0, 0, 1],
   bg: [1, 1, 1, 1],
 };

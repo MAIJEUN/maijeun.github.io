@@ -20,6 +20,7 @@ struct Params {
   thick: f32,      // 두께 비율 0 → 1 (0이면 종이처럼 얇음)
   bgA: f32,        // 바닥의 그림자·커스틱 세기. 1 = 홈 화면, 0 = 로고만 (다른 페이지 위를 날아갈 때)
   aa: f32,         // 1 = 모서리 안티앨리어싱 켬, 0 = 끔 (날아가는 동안 가볍게)
+  quality: f32,    // 1 = 보통, 0 = 가볍게 (GPU 가 버거워하는 기기: 반복 횟수를 줄이고 안티앨리어싱 끔)
   fg: vec4f,
   bg: vec4f,
 }
@@ -201,10 +202,12 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   var hit = false;
   var minD = 1e9;
   var tMin = t;
+  let lite = params.quality < 0.5;
+  let steps = select(128, 56, lite);
   if (tn < tf) {
     var done = false;
     for (var i = 0; i < 128; i++) {
-      if (t > tf) { done = true; break; }
+      if (i >= steps || t > tf) { done = t > tf; break; }
       let d = sdf3(ro + rd * t);
       if (d < minD) { minD = d; tMin = t; }
       if (d < 0.25 * px) { hit = true; break; }
@@ -237,7 +240,9 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
     let rIn = refract(rd, n, 1.0 / IOR);
     var t2 = 0.6 * s;
     var exited = false;
+    let inner = select(64, 24, lite);
     for (var j = 0; j < 64; j++) {
+      if (j >= inner) { break; }
       let d = -sdf3(ph + rIn * t2);
       if (d < 0.25 * px) { exited = true; break; }
       t2 += max(d, 0.12 * s);
@@ -300,7 +305,7 @@ fn shadeAt(p: vec2f, px: f32) -> Sample {
   // 가운데 1점 + (모서리면) 4점. shadeAt 을 한 곳에서만 불러야 셰이더가 작게 컴파일됨
   // (여러 곳에서 부르면 무거운 계산이 통째로 여러 벌 복사돼, 휴대폰 GPU 드라이버가 컴파일하다 멈출 수 있음)
   var offs = array<vec2f, 5>(vec2f(0.0), vec2f(0.125, 0.375), vec2f(-0.375, 0.125), vec2f(-0.125, -0.375), vec2f(0.375, -0.125));
-  let aaOn = AA_SAMPLES > 0 && params.aa > 0.5;
+  let aaOn = AA_SAMPLES > 0 && params.aa > 0.5 && params.quality > 0.5;
   var acc = vec4f(0.0);
   var count = 0.0;
   var edge = false;
